@@ -1,0 +1,22 @@
+version: '0'
+
+services:
+  web: 
+    build: ./web/
+    volumes: 
+     - ./data:/data
+     - ./web/app/:/app
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_DEBUG: "true"
+  spine: 
+    build: ./abc-spine/
+    ports:
+     - "5001:5001"
+    volumes: 
+     - ./data:/data
+     - ./abc-spine/app:/app
+     - '/home/donal/ABC-toolkit/abcCore:/app/abcCore'
+    environment:
+      FLASK_DEBUG: "true"

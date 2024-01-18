@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %} Homepage {% endblock %}
+
+
+{% block content %} 
+<div>
+    <h1>ABC Toolkit home ++ </h1>
+    <button onclick="say_hello(`spine`);">Say hello to abc-spine</button>
+</div>
+
+{% endblock %}
+
+{% block script %}
+<script>
+    function say_hello(service) {
+        console.log(`Saying hello to ${service}`)
+
+        request = {
+            "service": `${service}`
+        }
+        
+        fetch(
+            "{{url_for('index.hello')}}", {
+            method: "POST",
+            credentials: "include",
+            body: JSON.stringify(request),
+            cache: "no-cache",
+            headers: new Headers({
+                "content-type": "application/json"
+            })
+        })
+        .then(function (res) {
+            if (res.status !== 200) {
+                // Error handling
+                console.log(`Response status was not 200: ${res.status}`);
+                return;
+            }
+            res.json().then(function (data) {
+                console.log(`${service} replied with: ${data.message}`)
+            })
+            
+        })
+
+
+    }
+</script>
+{% endblock %}
