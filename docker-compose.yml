@@ -5,18 +5,28 @@ services:
     build: ./web/
     volumes: 
      - ./data:/data
-     - ./web/app/:/app
+     - ./web/src/:/src
+     - ./logs:/var/log
     ports:
       - "5000:5000"
     environment:
       FLASK_DEBUG: "true"
-  spine: 
-    build: ./abc-spine/
+
+  backend: 
+    build: ./backend/
     ports:
      - "5001:5001"
     volumes: 
      - ./data:/data
-     - ./abc-spine/app:/app
-     - '/home/donal/ABC-toolkit/abcCore:/app/abcCore'
+     - ./backend/src:/src
+     - ./logs:/var/log
+     - ./backend/models:/src/models
     environment:
       FLASK_DEBUG: "true"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

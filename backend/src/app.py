@@ -6,10 +6,21 @@ import os
 from flask import Flask
 from flask_cors import CORS
 import main, api
+import logging
 
 INPUT_DIR = '/data/inputs/'
-OUTPUT_DIR = '/data/outputs/abc-spine/'
+OUTPUT_DIR = '/data/outputs/'
 DB_NAME = 'db.sqlite'
+
+logger = logging.getLogger(__name__)
+
+logging.basicConfig(filename=f'/var/log/backend.log',
+level=logging.INFO,
+format="[%(asctime)s] [%(process)s] [%(threadName)s] [%(levelname)s] (%(name)s:%(lineno)d) - %(message)s",
+datefmt="%Y-%m-%d %H:%M:%S",
+force=True,
+)
+
 
 def create_app():
     app = Flask(__name__, instance_relative_config=True)
@@ -32,4 +43,5 @@ def create_app():
 
 
 App = create_app()
-CORS(App) # Allow Cross-origin requests
+CORS(App) # Allow Cross-origin requests~
+logger.info("App started")

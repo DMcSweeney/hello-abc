@@ -7,7 +7,7 @@ RUN apt-get install gcc
 VOLUME [ "/data" ]
 
 #Set working dir
-WORKDIR /app
+WORKDIR /src
 
 RUN python -m pip install -U pip
 

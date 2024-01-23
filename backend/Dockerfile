@@ -7,7 +7,7 @@ RUN apt-get install gcc
 VOLUME [ "/data" ]
 
 #Set working dir
-WORKDIR /app
+WORKDIR /src
 
 RUN python -m pip install -U pip
 
@@ -21,7 +21,7 @@ RUN export PATH="/home/appuser/.local/bin:$PATH"
 # COPY app/* .
 # App folder is mounted from host for live updates
 
-COPY models/ ./models/
+COPY ./models/ ./
 
 ## Install requirements
 COPY requirements.txt .

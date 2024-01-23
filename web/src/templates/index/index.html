@@ -5,7 +5,7 @@
 {% block content %} 
 <div>
     <h1>ABC Toolkit home ++ </h1>
-    <button onclick="say_hello(`spine`);">Say hello to abc-spine</button>
+    <button onclick="say_hello();">Say hello to the backend container</button>
 </div>
 
 {% endblock %}
@@ -13,21 +13,11 @@
 {% block script %}
 <script>
     function say_hello(service) {
-        console.log(`Saying hello to ${service}`)
-
-        request = {
-            "service": `${service}`
-        }
+        console.log(`Saying hello to backend container`)
         
         fetch(
             "{{url_for('index.hello')}}", {
-            method: "POST",
-            credentials: "include",
-            body: JSON.stringify(request),
-            cache: "no-cache",
-            headers: new Headers({
-                "content-type": "application/json"
-            })
+            method: "GET"
         })
         .then(function (res) {
             if (res.status !== 200) {

@@ -12,6 +12,15 @@ INPUT_DIR = '/data/inputs/'
 OUTPUT_DIR = '/data/outputs/web/'
 DB_NAME = 'db.sqlite'
 
+logger = logging.getLogger(__name__)
+
+logging.basicConfig(filename=f'/var/log/web.log',
+level=logging.INFO,
+format="[%(asctime)s] [%(process)s] [%(threadName)s] [%(levelname)s] (%(name)s:%(lineno)d) - %(message)s",
+datefmt="%Y-%m-%d %H:%M:%S",
+force=True,
+)
+
 
 def create_app():
     app = Flask(__name__, instance_relative_config=True)
@@ -31,4 +40,5 @@ def create_app():
     return app
 
 App=create_app()
-CORS(App)
+CORS(App) # Allow cross-origin requests
+logger.info("App started")
