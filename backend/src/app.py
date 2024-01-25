@@ -4,8 +4,10 @@ Flask application
 
 import os
 from flask import Flask
+from celery import Celery
 from flask_cors import CORS
-import main, api
+import main
+from api import spine, segment
 import logging
 
 INPUT_DIR = '/data/inputs/'
@@ -21,7 +23,6 @@ datefmt="%Y-%m-%d %H:%M:%S",
 force=True,
 )
 
-
 def create_app():
     app = Flask(__name__, instance_relative_config=True)
     path_to_db = os.path.join(OUTPUT_DIR, DB_NAME)
@@ -35,7 +36,8 @@ def create_app():
 
     # Add blueprints
     app.register_blueprint(main.bp)
-    app.register_blueprint(api.bp)
+    app.register_blueprint(spine.bp)
+    app.register_blueprint(segment.bp)
 
     app.add_url_rule('/', endpoint='main')
 
@@ -45,3 +47,6 @@ def create_app():
 App = create_app()
 CORS(App) # Allow Cross-origin requests~
 logger.info("App started")
+
+
+

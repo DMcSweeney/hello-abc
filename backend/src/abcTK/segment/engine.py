@@ -3,6 +3,7 @@ Base class for segmentation engine
 """
 
 import os
+import ast
 import time
 import logging
 import SimpleITK as sitk
@@ -18,20 +19,26 @@ from scipy.special import softmax
 import skimage
 from flask import abort
 
-from abcTK.mixin import dotdict
+from abcTK.segment.writer import sanityWriter
 
 logger = logging.getLogger(__name__)
 
 
 class segmentationEngine():
-    def __init__(self, modality, vertebra, worldmatch_correction, fat_threshold=(-190, -30), muscle_threshold=(-29, 150), **kwargs):
+    def __init__(self, output_dir, modality, vertebra, worldmatch_correction, fat_threshold=(-190, -30), muscle_threshold=(-29, 150), **kwargs):
+        self.output_dir = output_dir
         self.modality = modality
         self.v_level = vertebra
+        
         self.worldmatch_correction = worldmatch_correction  ## If data has gone through worldmatch need to shift intensities by -1024
-        self.fat_threshold = fat_threshold 
-        self.muscle_threshold = muscle_threshold
 
-
+        self.thresholds = {
+            'skeletal_muscle': muscle_threshold,
+            'subcutaneous_fat': fat_threshold,
+            'IMAT': fat_threshold,
+            'visceral_fat': fat_threshold,
+            'body': (None, None) # No thresholds for body mask
+        }
 
         self._init_model_bank() #* Load bank of models
         self._set_options() #* Set ONNX session options
@@ -47,34 +54,42 @@ class segmentationEngine():
             ],)
         
     
-    def forward(self, input_path, output_dir, slice_number, num_slices, loader_function, bone_mask, **kwargs):
+    def forward(self, input_path, slice_number, num_slices, loader_function, generate_bone_mask, **kwargs):
         ###* ++++++++++ PRE-PROCESS +++++++++++++++++
-        mask_dir = os.path.join(output_dir, 'masks')
+        mask_dir = os.path.join(self.output_dir, 'masks')
         os.makedirs(mask_dir, exist_ok=True)
 
 
-        # Load input volume
+        #* Load input volume
         Image = loader_function(input_path) # Returns SimpleITK image and reference slice
+        Image, orient = self.reorient(Image, orientation='LPS')
+
+        if orient.GetFlipAxes()[-1]:
+            slice_number = Image.GetSize()[-1] - int(slice_number) - 1 # Since size starts at 1 but indexing starts at 0
+
         if type(Image) == np.array:
             image = Image
             pixel_spacing = (1, 1, 1)
         else:
             image = sitk.GetArrayFromImage(Image)
             pixel_spacing = Image.GetSpacing()
-
-        ## Load the bone mask or generate?
-        ##TODO Generate bone mask 
-        if type(bone_mask) == bool and bone_mask:
-            # Regenerate
+        self.image = image.copy()
+        
+        ##* Load the bone mask or generate
+        if type(generate_bone_mask) == bool and generate_bone_mask:
+            # Regenerat
             logger.info("Generating bone mask")
             Bone = self.generate_bone_mask(Image, pixel_spacing)
             sitk.WriteImage(Bone, os.path.join(mask_dir, 'BONE.nii.gz'))
+            Bone, _ = self.reorient(Bone, orientation='LPS')
             self.bone = sitk.GetArrayFromImage(Bone)
-        elif type(bone_mask) == str:
+        elif type(generate_bone_mask) == str:
             # Assume this is a path
-            logger.info(f"Reading bone mask from file: {bone_mask}")
-            self.bone = sitk.GetArrayFromImage(sitk.ReadImage(bone_mask))
-
+            logger.info(f"Reading bone mask from file: {generate_bone_mask}")
+            Bone = sitk.ReadImage(generate_bone_mask)
+            Bone, _ = self.reorient(Bone, orientation='LPS')
+            self.bone = sitk.GetArrayFromImage(Bone)
+        self.bone = np.logical_not(self.bone)
 
         #* Create some holders to put predictions
         #TODO Should predictions be written to disk? Slower but less mem. w/ big input res.
@@ -89,7 +104,10 @@ class segmentationEngine():
 
         #* Subset the reference image
         #TODO check this works as expected with num_slices = 0
+        self.slice_number = slice_number ## Reference slice
+        self.num_slices = num_slices
         self.img = self.prepare_multi_slice(image, slice_number, num_slices)
+
         ###* ++++++++++ INFERENCE +++++++++++++++++
         #TODO This can be parallelised
         chan2_outputs = []
@@ -104,11 +122,16 @@ class segmentationEngine():
         ###* ++++++++++ POST-PROCESS +++++++++++++++++
         ## Extracts IMAT
         self.extract_imat(image)
-        self.post_process(mask_dir, Image, chan2_outputs, chan3_outputs)
+        
+        #TODO IF a mask exists, read it, overwrite and save!! That way all levels will be annotated in the same file.
+        
+        return self.post_process(mask_dir, Image, chan2_outputs, chan3_outputs) # Returns stats for every compartment at every slice
 
     ###############################################
     #* ================ HELPERS ==================
     ###############################################
+        
+
     def generate_bone_mask(self, Image, pixel_spacing, threshold = 350, radius = 3):
         #~ Create bone mask (by thresholding) for handling partial volume effect
         #@threshold in HU; radius in mm.
@@ -135,11 +158,12 @@ class segmentationEngine():
         dil.SetKernelType(sitk.sitkBall)
         dil.SetKernelRadius(pix_rad)
         dil.SetForegroundValue(1)
-        return dil.Execute(bone_mask)
+        Bone= dil.Execute(bone_mask)
+        return sitk.Cast(Bone, sitk.sitkInt8)
     
     def prepare_multi_slice(self, image, slice_number, num_slices):
         """
-        This prepares multi-slice inputs. Treats each slide as a seperate element of a batch.
+        This prepares multi-slice inputs and maintains slice # to index mapping.
         i.e. Batch size = 2*num_slices + 1  
         """
         self.idx2slice = {}
@@ -246,18 +270,28 @@ class segmentationEngine():
             return np.round(self.sigmoid(outputs)).astype(np.int8)
 
     def post_process(self, output_dir, refImage, chan2_outputs, chan3_outputs):
-        ## Convert predictions to ITK images and save
+        writer = sanityWriter(self.output_dir, self.slice_number, self.num_slices)
 
+        ## Convert predictions to ITK images and save
+        data = {}
         #####==========  IMAT ====================
+        logger.info("Extracting IMAT stats")
+        data['IMAT'] = self.extract_stats(self.holders['IMAT'], self.thresholds['IMAT'])
+        logger.info("Writing IMAT sanity check")
+        writer.write_segmentation_sanity('IMAT', self.image, self.holders['IMAT'])
         #* Convert predictions back to ITK Image, using input Image as reference
-        logger.info(f"Converting IMAT mask to ITK Image. Size: {self.holders['IMAT'] .shape}")
+        logger.info(f"Converting IMAT mask to ITK Image. Size: {self.holders['IMAT'].shape}")
         IMAT  = self.npy2itk(self.holders['IMAT'] , refImage)
         logger.info("Writing IMAT mask")
         self.save_prediction(output_dir, 'IMAT', IMAT)
 
         ##### =========== MUSCLE =================
         #* Remove IMAT from muscle mask
+        logger.info("Extracting skeletal muscle stats")
         skeletal_muscle = np.where(self.holders['IMAT'] == 1, 0, self.holders['skeletal_muscle']).astype(np.int8)
+        data['skeletal_muscle'] = self.extract_stats(self.holders['skeletal_muscle'], self.thresholds['skeletal_muscle'])
+        logger.info("Writing skeletal muscle sanity check")
+        writer.write_segmentation_sanity('MUSCLE', self.image, self.holders['skeletal_muscle'])
         logger.info(f"Converting skeletal muscle mask to ITK Image. Size: {skeletal_muscle.shape}")
         SkeletalMuscle = self.npy2itk(skeletal_muscle, refImage)
         logger.info("Writing skeletal muscle mask")
@@ -266,10 +300,20 @@ class segmentationEngine():
         ##### =========== SUBCUT/VISCERAL FAT =================
         #* Repeat with subcut and visceral fat. if they exist
         if any(chan2_outputs) and any(chan3_outputs):
+            logger.info("Extracting subcutaneous fat stats")
+            data['subcutaneous_fat'] = self.extract_stats(self.holders['subcutaneous_fat'], self.thresholds['subcutaneous_fat'])
+            logger.info("Writing subcutaneous fat sanity check")
+            writer.write_segmentation_sanity('SUBCUT_FAT', self.image, self.holders['subcutaneous_fat'])
             logger.info(f"Converting subcutaneous fat mask to ITK Image. Size: {self.holders['subcutaneous_fat'].shape}")
             SubcutaneousFat = self.npy2itk(self.holders['subcutaneous_fat'], refImage)
+            
+            logger.info("Extracting visceral fat stats")
+            data['visceral_fat'] = self.extract_stats(self.holders['visceral_fat'], self.thresholds['visceral_fat'])
+            logger.info("Writing visceral fat sanity check")
+            writer.write_segmentation_sanity('VISCERAL_FAT', self.image, self.holders['visceral_fat'])
             logger.info(f"Converting visceral fat mask to ITK Image. Size: {self.holders['visceral_fat'].shape}")
             VisceralFat = self.npy2itk(self.holders['visceral_fat'], refImage)
+            
             logger.info("Writing subcutaneous fat mask")
             self.save_prediction(output_dir, 'SUBCUT_FAT', SubcutaneousFat)
             logger.info("Writing visceral fat mask")
@@ -277,28 +321,61 @@ class segmentationEngine():
 
         ##### =========== BODY MASK =================
         elif any(chan2_outputs) and not any(chan3_outputs):
+            logger.info("Extracting body stats")
+            data['body'] = self.extract_stats(self.holders['body'], self.thresholds['body'])
+            logger.info("Writing body sanity check")
+            writer.write_segmentation_sanity('BODY', self.image, self.holders['body'])
             logger.info(f"Converting body mask to ITK Image. Size: {self.holders['body'].shape}")
             Body = self.npy2itk(self.holders['body'], refImage)
             logger.info("Writing body mask")
             self.save_prediction(output_dir, 'BODY', Body)
         else:
             logger.warning(f"No predictions other than skeletal muscle")
+        return data
+
+    def extract_stats(self, mask, thresholds):
+        #* Extract region of interest
+        prediction = mask[self.slice_number-self.num_slices:self.slice_number+self.num_slices+1]
+        image = self.image[self.slice_number-self.num_slices:self.slice_number+self.num_slices+1]
+
+        #* Apply thresholding
+        if not all([x is None for x in thresholds]):
+            threshold_image = np.logical_and(
+                image >= thresholds[0], ## Threshold the subset image
+                image <= thresholds[1],
+            ).astype(np.int8)
+
+            prediction = np.logical_and(threshold_image, prediction).astype(np.int8)
+
+        #* Calculate stats across subset
+        stats = {}
+        slice_numbers = [x for x in np.arange(self.slice_number-self.num_slices, self.slice_number+self.num_slices+1) ]
+
+        for idx, slice_num in zip(range(image.shape[0]), slice_numbers) :
+            im, pred = image[idx], prediction[idx]
+            #* Area calculation          
+            area = float(np.sum(pred))
+            #* Density calculation
+            density = np.mean(im[pred==1])
+            stats[f'Slice {slice_num}'] = {'area (voxels)': area, 'density (HU)': density}
+        
+        return stats
 
     def extract_imat(self, numpyImage):
         # Extract IMAT from muscle segmentation: fatByThreshold U muscleSegmentation
 
-        logging.info(f"Generating IMAT mask using thresholds: {self.fat_threshold}")
-        blurred_image = skimage.filters.gaussian(numpyImage, sigma=0.7, preserve_range=True)
+        logging.info(f"Generating IMAT mask using thresholds: {self.thresholds['IMAT']}")
+        blurred_image = skimage.filters.gaussian(numpyImage, sigma=0.5, preserve_range=True)
         fat_threshold = np.logical_and(
-            blurred_image >= self.fat_threshold[0],
-            blurred_image <= self.fat_threshold[1]
+            blurred_image >= self.thresholds['IMAT'][0],
+            blurred_image <= self.thresholds['IMAT'][1]
             ).astype(np.int8)
         IMAT = np.logical_and(fat_threshold, self.holders['skeletal_muscle']).astype(np.int8)
         self.holders['IMAT'] = skimage.measure.label(IMAT, connectivity=2, return_num=False) # connected components
 
-
     def save_prediction(self, output_dir, tag, Prediction):
         #TODO Convert predictions to RTStruct instead of nii
+        #TODO This writes the prediction into the frame of the re-oriented input. If original scan is not LPS, these won't match...
         #* Save mask to outputs folder
         output_filename = os.path.join(output_dir, tag + '.nii.gz')
         logger.info(f"Saving prediction to: {output_filename}")
@@ -328,25 +405,31 @@ class segmentationEngine():
         Image.CopyInformation(reference)
         return Image
 
+    @staticmethod
+    def reorient(Image, orientation='LPS'):
+        orient = sitk.DICOMOrientImageFilter()
+        orient.SetDesiredCoordinateOrientation(orientation)
+        return orient.Execute(Image), orient
+    
     #####################################################
     #*  ================= OPTIONS ==================
     #####################################################
     def _init_model_bank(self):
         #* Paths to segmentation models
         model_bank = {
-            'C3': {'CT': './models/segmentation/c3_pCT.quant.onnx',
-                    'CBCT': './models/segmentation/C3_cbct.onnx'},
-            'T4': {'CT': './models/segmentation/TitanMixNet-Med-T4-Body-M.onnx'
+            'C3': {'CT': '/src/models/segmentation/c3_pCT.quant.onnx',
+                    'CBCT': '/src/models/segmentation/C3_cbct.onnx'},
+            'T4': {'CT': '/src/models/segmentation/TitanMixNet-Med-T4-Body-M.onnx'
                     },
-            'T9': {'CT': './models/segmentation/TitanMixNet-Med-T9-Body-M.onnx'
+            'T9': {'CT': '/src/models/segmentation/TitanMixNet-Med-T9-Body-M.onnx'
                     },
-            'T12': {'CT': './models/segmentation/TitanMixNet-Med-T12-Body-M.onnx'
+            'T12': {'CT': '/src/models/segmentation/TitanMixNet-Med-T12-Body-M.onnx'
                     },
-            'L3': {'CT': './models/segmentation/TitanMixNet-Med-L3-FM.onnx'
+            'L3': {'CT': '/src/models/segmentation/TitanMixNet-Med-L3-FM.onnx'
             },
-            'L5': {'CT': './models/segmentation/TitanMixNet-Med-L5-FM.onnx'
+            'L5': {'CT': '/src/models/segmentation/TitanMixNet-Med-L5-FM.onnx'
                     },
-            'Thigh': {'CT': './models/segmentation/Thigh_14pats.quant.onnx'}
+            'Thigh': {'CT': '/src/models/segmentation/Thigh_14pats.quant.onnx'}
         }
         
         if self.v_level in model_bank:
