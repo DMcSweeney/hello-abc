@@ -19,11 +19,15 @@ class sanityWriter():
         img = image[self.slice_number-self.num_slices:self.slice_number+self.num_slices+1]
 
         total_slices = 2*self.num_slices+1
-        if total_slices <= 5:
-            fig, ax = plt.subplots(1, total_slices, figsize=(20, 5))
+        if total_slices == 1:
+            fig, ax = plt.subplots(1, 1, figsize=(20, 5))
+            ax = [ax] # To make subscriptable for plotting
         else:
-            fig, axes = plt.subplots(2, total_slices//2, figsize=(20, 10))
-            ax = axes.ravel()
+            if total_slices <= 5:
+                fig, ax = plt.subplots(1, total_slices, figsize=(20, 5))
+            else:
+                fig, axes = plt.subplots(2, total_slices//2, figsize=(20, 10))
+                ax = axes.ravel()
         fig.patch.set_facecolor('black')
 
         for i in range(total_slices):

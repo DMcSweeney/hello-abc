@@ -3,12 +3,16 @@ Flask application
 """
 
 import os
-from flask import Flask
-from celery import Celery
-from flask_cors import CORS
-import main
-from api import spine, segment
 import logging
+from flask import Flask
+from flask_cors import CORS
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import relationship
+
+import main
+from config import BaseConfig
+from api import spine, segment
 
 INPUT_DIR = '/data/inputs/'
 OUTPUT_DIR = '/data/outputs/'
@@ -23,14 +27,28 @@ datefmt="%Y-%m-%d %H:%M:%S",
 force=True,
 )
 
+def init_models(db):
+    class Images(db.Model):
+        __tablename__ = 'images'
+        id = db.Column(db.Integer, primary_key=True)
+        patientID = db.Column(db.String, nullable=False)
+        project = db.Column(db.String, nullable=False)
+        path = db.Column(db.String, nullable=False)
+        series_uuid = db.Column(db.String, nullable=False)
+    class Results(db.Model):
+        __tablename__ = 'results'
+        id = db.Column(db.Integer, ForeignKey(Images.id), primary_key=True)
+        
+        relationship('Images', foreign_keys='Results.id')
+    
+    db.create_all()
+
 def create_app():
     app = Flask(__name__, instance_relative_config=True)
-    path_to_db = os.path.join(OUTPUT_DIR, DB_NAME)
+    app.config.from_object(BaseConfig)
 
-    app.config.from_mapping(
-        SECRET_KEY='secret',
-        DATABASE=path_to_db
-    )
+    db = SQLAlchemy()
+
     app.config['INPUT_DIR'] = INPUT_DIR
     app.config['OUTPUT_DIR'] = OUTPUT_DIR
 
@@ -41,6 +59,10 @@ def create_app():
 
     app.add_url_rule('/', endpoint='main')
 
+    db.init_app(app)
+    with app.app_context():
+        init_models(db)
+        
     return app
 
 

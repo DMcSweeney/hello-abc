@@ -15,16 +15,11 @@ from abcTK.segment.engine import segmentationEngine
 
 bp = Blueprint('api/segment', __name__)
 logger = logging.getLogger(__name__)
-celery = Celery(
-    __name__, 
-    broker="redis://redis:6379/0",
-    backend="redis://redis:6379/0")
 
 #########################################################
 #* ==================== API =============================
 #########################################################
 
-@celery.task
 @bp.route('/api/infer/segment', methods=["GET", "POST"])
 def infer_segment():
     """

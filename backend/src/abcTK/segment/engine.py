@@ -58,7 +58,7 @@ class segmentationEngine():
         ###* ++++++++++ PRE-PROCESS +++++++++++++++++
         mask_dir = os.path.join(self.output_dir, 'masks')
         os.makedirs(mask_dir, exist_ok=True)
-
+        start = time.time()
 
         #* Load input volume
         Image = loader_function(input_path) # Returns SimpleITK image and reference slice
@@ -108,24 +108,34 @@ class segmentationEngine():
         self.num_slices = num_slices
         self.img = self.prepare_multi_slice(image, slice_number, num_slices)
 
+        pre_processing_time = time.time() - start
+        logger.info(f"Pre-processing: {pre_processing_time} s")
+
         ###* ++++++++++ INFERENCE +++++++++++++++++
         #TODO This can be parallelised
         chan2_outputs = []
         chan3_outputs = []
         logger.info(f"==== INFERENCE ====")
+        start = time.time()
         for i in range(self.img.shape[0]):
             # Returns True if ROI in channel else False
             chan1, chan2, chan3 = self.per_slice_inference(i)
             chan2_outputs.append(chan2)
             chan3_outputs.append(chan3)
 
+        inference_time = time.time() - start
+        logger.info(f"Total inference: {inference_time} s")
+
         ###* ++++++++++ POST-PROCESS +++++++++++++++++
+        start = time.time()
         ## Extracts IMAT
         self.extract_imat(image)
         
         #TODO IF a mask exists, read it, overwrite and save!! That way all levels will be annotated in the same file.
-        
-        return self.post_process(mask_dir, Image, chan2_outputs, chan3_outputs) # Returns stats for every compartment at every slice
+        output = self.post_process(mask_dir, Image, chan2_outputs, chan3_outputs) # Returns stats for every compartment at every slice
+        post_processing_time = time.time() - start
+        logger.info(f"Post-processing: {post_processing_time} s")
+        return output 
 
     ###############################################
     #* ================ HELPERS ==================

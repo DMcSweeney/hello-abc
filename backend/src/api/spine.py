@@ -45,12 +45,15 @@ def infer_spine():
         os.makedirs(output_dir, exist_ok=True)
 
         # +++++ INFERENCE +++++
-        response = app.infer(request = {"model": "vertebra_pipeline", "image": req['input_dir']})
+        response = app.infer(request = {"model": "vertebra_pipeline", "image": req['input_path']})
         logger.info(f"Spine labelling complete: {response}")
         
         json_output_path = os.path.join(output_dir, 'json')
         os.makedirs(json_output_path, exist_ok=True)
         res = handle_response(response, json_output_path)
+        ##TODO UPDATE DATABASE
+
+
 
         return res
 
@@ -136,12 +139,12 @@ def init_app():
     }   
     return spineApp(app_dir, studies, config)
 
-def json_to_file(json_payload, output_path):
+def json_to_file(json_payload, output_path, filename='spine-output.json'):
     """
     Convert the json output with levels into a mask.
     Not ideal for storage but better integration with XNAT and reduces transform-related errors
     """
-    output_filename = os.path.join(output_path, 'spine-output.json')
+    output_filename = os.path.join(output_path, filename)
     with open(output_filename, 'w') as f:
         json.dump(json_payload, f)
 
@@ -161,8 +164,10 @@ def handle_response(res, output_path):
     
     elif label is None and label_json is not None:
         ## Prettify the json
+        json_to_file(label_json, output_path, filename='all-spine-outputs.json')
         pretty_json = prettify_json(label_json)
         json_to_file(pretty_json, output_path)
+        
         logger.error("No centroids detected")
         res = make_response(jsonify({
             "message": f"Labelling finished succesfully. Output written to: {output_path}",

@@ -1,6 +1,7 @@
 version: '0'
 
 services:
+  # Web server
   web: 
     build: ./web/
     volumes: 
@@ -8,22 +9,26 @@ services:
      - ./web/src/:/src
      - ./logs:/var/log
     ports:
-      - "5000:5000"
+      - '5000:5000'
     environment:
-      FLASK_DEBUG: "true"
+      - FLASK_DEBUG=${FLASK_DEBUG}
     depends_on:
       - backend
+      - db
+
   backend: 
     build: ./backend/
     ports:
-     - "5001:5001"
+     - '5001:5001'
     volumes: 
      - ./data:/data
      - ./backend/src:/src
      - ./logs:/var/log
      - ./backend/models:/src/models
     environment:
-      FLASK_DEBUG: "true"
+      - FLASK_DEBUG=${FLASK_DEBUG}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_PORT=${POSTGRES_PORT}
     deploy:
       resources:
         reservations:
@@ -32,7 +37,19 @@ services:
               count: 1
               capabilities: [gpu]
     depends_on:
-      - redis
-      
-  redis:
-    image: redis:6.2-bookworm
+      - db
+
+  db: 
+    restart: always
+    image: 'postgres:15.5'
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql
+    expose:
+    - '5432'
+    
+volumes:
+  db-data:
