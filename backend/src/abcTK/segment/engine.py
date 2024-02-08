@@ -284,11 +284,12 @@ class segmentationEngine():
 
         ## Convert predictions to ITK images and save
         data = {}
+        paths_to_sanity = {}
         #####==========  IMAT ====================
         logger.info("Extracting IMAT stats")
         data['IMAT'] = self.extract_stats(self.holders['IMAT'], self.thresholds['IMAT'])
         logger.info("Writing IMAT sanity check")
-        writer.write_segmentation_sanity('IMAT', self.image, self.holders['IMAT'])
+        paths_to_sanity['IMAT'] = writer.write_segmentation_sanity('IMAT', self.image, self.holders['IMAT'])
         #* Convert predictions back to ITK Image, using input Image as reference
         logger.info(f"Converting IMAT mask to ITK Image. Size: {self.holders['IMAT'].shape}")
         IMAT  = self.npy2itk(self.holders['IMAT'] , refImage)
@@ -301,7 +302,7 @@ class segmentationEngine():
         skeletal_muscle = np.where(self.holders['IMAT'] == 1, 0, self.holders['skeletal_muscle']).astype(np.int8)
         data['skeletal_muscle'] = self.extract_stats(self.holders['skeletal_muscle'], self.thresholds['skeletal_muscle'])
         logger.info("Writing skeletal muscle sanity check")
-        writer.write_segmentation_sanity('MUSCLE', self.image, self.holders['skeletal_muscle'])
+        paths_to_sanity['skeletal_muscle'] =writer.write_segmentation_sanity('MUSCLE', self.image, self.holders['skeletal_muscle'])
         logger.info(f"Converting skeletal muscle mask to ITK Image. Size: {skeletal_muscle.shape}")
         SkeletalMuscle = self.npy2itk(skeletal_muscle, refImage)
         logger.info("Writing skeletal muscle mask")
@@ -313,14 +314,14 @@ class segmentationEngine():
             logger.info("Extracting subcutaneous fat stats")
             data['subcutaneous_fat'] = self.extract_stats(self.holders['subcutaneous_fat'], self.thresholds['subcutaneous_fat'])
             logger.info("Writing subcutaneous fat sanity check")
-            writer.write_segmentation_sanity('SUBCUT_FAT', self.image, self.holders['subcutaneous_fat'])
+            paths_to_sanity['subcutaneous_fat'] = writer.write_segmentation_sanity('SUBCUT_FAT', self.image, self.holders['subcutaneous_fat'])
             logger.info(f"Converting subcutaneous fat mask to ITK Image. Size: {self.holders['subcutaneous_fat'].shape}")
             SubcutaneousFat = self.npy2itk(self.holders['subcutaneous_fat'], refImage)
             
             logger.info("Extracting visceral fat stats")
             data['visceral_fat'] = self.extract_stats(self.holders['visceral_fat'], self.thresholds['visceral_fat'])
             logger.info("Writing visceral fat sanity check")
-            writer.write_segmentation_sanity('VISCERAL_FAT', self.image, self.holders['visceral_fat'])
+            paths_to_sanity['visceral_fat'] = writer.write_segmentation_sanity('VISCERAL_FAT', self.image, self.holders['visceral_fat'])
             logger.info(f"Converting visceral fat mask to ITK Image. Size: {self.holders['visceral_fat'].shape}")
             VisceralFat = self.npy2itk(self.holders['visceral_fat'], refImage)
             
@@ -334,14 +335,15 @@ class segmentationEngine():
             logger.info("Extracting body stats")
             data['body'] = self.extract_stats(self.holders['body'], self.thresholds['body'])
             logger.info("Writing body sanity check")
-            writer.write_segmentation_sanity('BODY', self.image, self.holders['body'])
+            paths_to_sanity['body'] = writer.write_segmentation_sanity('BODY', self.image, self.holders['body'])
             logger.info(f"Converting body mask to ITK Image. Size: {self.holders['body'].shape}")
             Body = self.npy2itk(self.holders['body'], refImage)
             logger.info("Writing body mask")
             self.save_prediction(output_dir, 'BODY', Body)
         else:
             logger.warning(f"No predictions other than skeletal muscle")
-        return data
+        paths_to_sanity['ALL'] = writer.write_all_segmentation_sanity('ALL', self.image, self.holders, data)
+        return data, paths_to_sanity
 
     def extract_stats(self, mask, thresholds):
         #* Extract region of interest

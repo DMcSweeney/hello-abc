@@ -10,6 +10,8 @@ import json
 import logging
 
 from abcTK.spine.server import spineApp
+from app import mongo
+#import models
 
 
 bp = Blueprint('api/spine', __name__)
@@ -35,13 +37,28 @@ def infer_spine():
         ## Start the spineApp
         app = init_app()
 
-        if 'scan_id' not in req:
+        if 'series_uuid' not in req:
             # Infer scan id from dicom
             logger.info("Reading header from first dicom file")
             dcm_files = [x for x in os.listdir(req['input_path']) if x.endswith('.dcm')]
-            items = read_dicom_header(os.path.join(req["input_path"], dcm_files[0]), header_keys={'study_uid': '0020|000d'})
-            req['scan_id'] = items['study_uid']
-        output_dir = os.path.join(current_app.config['OUTPUT_DIR'], req["project"], req["scan_id"])
+            items = read_dicom_header(os.path.join(req["input_path"], dcm_files[0]), header_keys={'series_uuid': '0020|000e'})
+            req['series_uuid'] = items['series_uuid']
+            logger.info(f"series_uuid not provided. Reading from DICOM header: {req['series_uuid']}")
+            if req['series_uuid'] is None:
+                abort(400)
+
+        if 'patient_id' not in req:
+            # Infer patient id from dicom
+            logger.info("Reading header from first dicom file")
+            dcm_files = [x for x in os.listdir(req['input_path']) if x.endswith('.dcm')]
+            items = read_dicom_header(os.path.join(req["input_path"], dcm_files[0]), header_keys={'patient_id': '0010|0020'})
+            req['patient_id'] = items['patient_id']
+            logger.info(f"Patient ID was not provided. Reading from DICOM header: {req['patient_id']}")
+            if req['patient_id'] == '':
+                logger.error("Patient ID not found in DICOM header. Please provide with request.")
+                abort(500)
+        
+        output_dir = os.path.join(current_app.config['OUTPUT_DIR'], req["project"], req['patient_id'], req["series_uuid"])
         os.makedirs(output_dir, exist_ok=True)
 
         # +++++ INFERENCE +++++
@@ -51,9 +68,27 @@ def infer_spine():
         json_output_path = os.path.join(output_dir, 'json')
         os.makedirs(json_output_path, exist_ok=True)
         res = handle_response(response, json_output_path)
-        ##TODO UPDATE DATABASE
 
+        #######  UPDATE DATABASE #######
+        database = mongo.db # Access the database
 
+        # Insert image info into the images collection (patID, seriesUID, project, path and what has "happened" to the data)
+        payload = {
+            "_id": req['series_uuid'] ,"patientID": req['patient_id'], "project": req['project'], "path": req['input_path'], "series_uuid": req['series_uuid'],
+            "spine_labelling_done": True
+        }
+        #payload_id = database.data.insert_one(payload).inserted_id
+        database.images.replace_one({"_id": req['series_uuid'] }, payload, upsert=True)
+        logger.info(f"Inserted {payload} into collection: images")
+        # Then update the results collections
+
+        payload = {
+            "_id": req['series_uuid'] ,"patientID": req['patient_id'], "project": req['project'], "path": req['input_path'], "series_uuid": req['series_uuid'],
+            "message": res.json['message'],
+            "prediction": res.json['prediction'], "all_parameters": {k: str(v) for k, v in req.items()}
+        }
+        database.spine.replace_one({"_id": req['series_uuid']}, payload, upsert=True)
+        logger.info(f"Inserted {payload} into collection: spine")
 
         return res
 

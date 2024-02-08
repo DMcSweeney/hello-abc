@@ -14,7 +14,7 @@ services:
       - FLASK_DEBUG=${FLASK_DEBUG}
     depends_on:
       - backend
-      - db
+      - mongo
 
   backend: 
     build: ./backend/
@@ -27,8 +27,9 @@ services:
      - ./backend/models:/src/models
     environment:
       - FLASK_DEBUG=${FLASK_DEBUG}
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_PORT=${POSTGRES_PORT}
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      - MONGO_INITDB_DATABASE=${MONGO_INITDB_DATABASE}
     deploy:
       resources:
         reservations:
@@ -37,19 +38,31 @@ services:
               count: 1
               capabilities: [gpu]
     depends_on:
-      - db
+      - mongo
 
-  db: 
-    restart: always
-    image: 'postgres:15.5'
+  mongo:
+    image: 'mongo:6.0-jammy'
     environment:
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      - MONGO_INITDB_DATABASE=${MONGO_INITDB_DATABASE}
     volumes:
-      - db-data:/var/lib/postgresql
+      - ./data/db:/data/db
     expose:
-    - '5432'
-    
-volumes:
-  db-data:
+    - '27017'
+
+  mongo-express:
+    image: 'mongo-express:1.0.2'
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongo
+      - ME_CONFIG_MONGODB_PORT=27017
+      - ME_CONFIG_MONGODB_ENABLE_ADMIN=true
+      - ME_CONFIG_MONGODB_AUTH_DATABASE=admin
+      - ME_CONFIG_MONGODB_AUTH_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - ME_CONFIG_MONGODB_AUTH_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      - ME_CONFIG_BASICAUTH_USERNAME=${MONGOEXPRESS_LOGIN}
+      - ME_CONFIG_BASICAUTH_PASSWORD=${MONGOEXPRESS_PASSWORD}
+    depends_on:
+      - mongo
+    ports:
+      - "8888:8081"

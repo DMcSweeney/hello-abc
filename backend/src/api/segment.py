@@ -7,11 +7,15 @@ import numpy as np
 import logging
 import SimpleITK as sitk
 import time
+import json
+import base64
 
 from flask import Blueprint, request, make_response, abort, jsonify, current_app
 from celery import Celery
 
 from abcTK.segment.engine import segmentationEngine
+from app import mongo
+
 
 bp = Blueprint('api/segment', __name__)
 logger = logging.getLogger(__name__)
@@ -31,18 +35,15 @@ def infer_segment():
         req = request.get_json()
         logger.info(f"Request received: {req}")
         
+        ################## HANDLE REQUEST #########################################
         ## Check required params
-        check_params(req, required_params=["input_path", "project", "vertebra", "slice_number"])
+        check_params(req, required_params=["input_path", "project", "vertebra"])
 
         req['loader_function'], loader_name = get_loader_function(req['input_path'])
 
         if type(req["vertebra"]) == list:
             logger.error("Make multiple requests to use multiple models.")
             abort(400) # Bad request
-
-        if type(req['slice_number']) == str:
-            logger.info("Slice number provided as a string, converting to int")
-            req['slice_number'] = int(req['slice_number'])
 
         if "modality" not in req:
             ## If user doesn't provide modality, add default (CT)
@@ -56,22 +57,35 @@ def infer_segment():
         elif type(req["num_slices"]) == str:
             req['num_slices'] = int(req['num_slices'])
 
-        if 'scan_id' not in req:
+        if 'series_uuid' not in req:
             # Infer scan id from dicom
             # Filter dicom 
             if loader_name == 'dicom':
-                ## Read header to get scan ID
+                # Infer scan id from dicom
+                logger.info("Reading header from first dicom file")
                 dcm_files = [x for x in os.listdir(req['input_path']) if x.endswith('.dcm')]
-                logger.info("Getting scan id from series UUID in header. Overwrite with 'scan_id' in request.")
-                items = read_dicom_header(os.path.join(req["input_path"], dcm_files[0]), header_keys={'study_uid': '0020|000d'})
-                scan_id = items['study_uid']
+                items = read_dicom_header(os.path.join(req["input_path"], dcm_files[0]), header_keys={'series_uuid': '0020|000e'})
+                req['series_uuid'] = items['series_uuid']
+                logger.info(f"series_uuid not provided. Reading from DICOM header: {req['series_uuid']}")
+                if req['series_uuid'] is None:
+                    abort(400)
             else:
-                logger.warn("Input is not dicom, assuming scan ID = filename. Overwrite with 'scan_id' in request.")
+                logger.warn("Input is not dicom, assuming series_uuid = filename. Overwrite with 'series_uuid' in request.")
                 ext = os.path.splitext(req['input_path'])
-                scan_id = os.path.basename(req['input_path']).replace(ext, '')
+                req['series_uuid'] = os.path.basename(req['input_path']).replace(ext, '')
 
-            logger.info(f"++++++++ Scan ID is: {scan_id} ++++++++++++++")
-            req['scan_id'] = scan_id
+            logger.info(f"++++++++ Series UUID is: {req['series_uuid']} ++++++++++++++")
+
+        if 'patient_id' not in req:
+            # Infer patient id from dicom
+            logger.info("Reading header from first dicom file")
+            dcm_files = [x for x in os.listdir(req['input_path']) if x.endswith('.dcm')]
+            items = read_dicom_header(os.path.join(req["input_path"], dcm_files[0]), header_keys={'patient_id': '0010|0020'})
+            req['patient_id'] = items['patient_id'].strip('')
+            logger.info(f"Patient ID was not provided. Reading from DICOM header: {req['patient_id']}")
+            if req['patient_id'] == '':
+                logger.error("Patient ID not found in DICOM header. Please provide with request.")
+                abort(500)
 
         if 'worldmatch_correction' not in req:
             logger.info("Worldmatch correction (-1024 HU) will not be applied. Overwrite with 'worldmatch_correction' in request.")
@@ -87,15 +101,32 @@ def infer_segment():
                 # If can't be converted to bool assume path#
                 logger.info("Path to bone mask provided. Will not regenerate.")
 
-        output_dir = os.path.join(current_app.config['OUTPUT_DIR'], req["project"], req["scan_id"])
+
+        if "slice_number" not in req:
+            ## Check the spine collection for vertebra
+            match = mongo.db.spine.find_one({"_id": req['series_uuid']})
+            if match is None or req["vertebra"] not in match["prediction"]:
+                abort(400, {"message": "Could not find a slice number for the requested vertebra."})
+            req['slice_number'] = match["prediction"][req["vertebra"]][-1]
+            logger.info(f"Found slice number {req['slice_number']} for {req['vertebra']}")
+
+        if type(req['slice_number']) == str:
+            logger.info("Slice number provided as a string, converting to int")
+            req['slice_number'] = int(req['slice_number'])
+        
+        #############################################################################
+
+
+
+        output_dir = os.path.join(current_app.config['OUTPUT_DIR'], req["project"], req["patient_id"], req["series_uuid"])
         os.makedirs(output_dir, exist_ok=True)
         req['output_dir'] = output_dir
 
         ## +++  INFERENCE  ++++
-        
+        logger.info(f"Processing request: {req}")
         engine = segmentationEngine(**req)
         start = time.time()
-        data = engine.forward(**req)
+        data, paths_to_sanity = engine.forward(**req)
         end = time.time()
         
         ## Response should include parameters used: modality, model name, stats too?
@@ -106,6 +137,39 @@ def infer_segment():
             "time": f"Pipeline took {round(end-start, 3)} seconds"
         }), 200)
 
+        ## Insert into database
+        database = mongo.db
+
+        database.images.update_one({"_id": req['series_uuid']}, {"$set": {"segmentation_done": True}}, upsert=True)
+        logger.info(f"Updated collection: images")
+        
+
+        payload = {
+            "_id": req['series_uuid'] ,"patientID": req['patient_id'], "project": req['project'],
+            "path": req['input_path'], "series_uuid": req['series_uuid'],
+
+            ### PATH TO MASKS
+            "output_dir": output_dir, "paths_to_sanity_images": paths_to_sanity,
+            ### STATS
+            "statistics": data,
+            ## PARAMS
+            "all_parameters": {k: str(v) for k, v in req.items()}
+        }
+        database.segmentation.replace_one({"_id": req['series_uuid']}, payload, upsert=True)
+        logger.info(f"Inserted {payload} into collection: segmentation")
+
+        payload = {"_id": req['series_uuid'] ,"patientID": req['patient_id'], "project": req['project'],
+            "path": req['input_path'], "series_uuid": req['series_uuid'],
+            "paths_to_sanity_images": paths_to_sanity,
+            f"quality_control": {
+                req['vertebra']: 2 # 0, failed; 1, passed; 2, unseen
+                }
+            }
+        #TODO if an entry exists but for different level, need to update NOT replace
+
+        database.quality_control.replace_one({"_id": req['series_uuid']}, payload, upsert=True)
+        logger.info(f"Inserted {payload} into collection: quality_control")
+        
         return res
 
     elif request.method == 'GET':

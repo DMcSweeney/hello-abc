@@ -4,7 +4,10 @@ Base class for writing sanity predictions
 
 import os
 import numpy as np
+import logging
 import matplotlib.pyplot as plt
+#
+logger= logging.getLogger(__name__)
 
 class sanityWriter():
     def __init__(self, output_dir, slice_number, num_slices):
@@ -30,16 +33,54 @@ class sanityWriter():
                 ax = axes.ravel()
         fig.patch.set_facecolor('black')
 
+        slice_nums = np.arange(self.slice_number-self.num_slices, self.slice_number+self.num_slices+1, 1)
         for i in range(total_slices):
             pred = prediction[i]
             im = self.wl_norm(img[i], 400, 50)
-
+            ax[i].set_title(f'Slice: {slice_nums[i]}', c='white', size=20)
             ax[i].imshow(im, cmap='gray')
             ax[i].imshow(np.where(pred == 0, np.nan, pred), cmap='plasma_r', alpha=0.5)
 
         output_filename = os.path.join(self.output_dir, tag + '.png')
         fig.savefig(output_filename)
+        return output_filename
 
+    def write_all_segmentation_sanity(self, tag, image, mask, filter):
+        ## Filter is used to figure out what data we expect
+        prediction = np.zeros_like(mask['skeletal_muscle'])
+
+        ## Setup figure
+        total_slices = 2*self.num_slices+1
+        if total_slices == 1:
+            fig, ax = plt.subplots(1, 1, figsize=(20, 5))
+            ax = [ax] # To make subscriptable for plotting
+        else:
+            if total_slices <= 5:
+                fig, ax = plt.subplots(1, total_slices, figsize=(20, 5))
+            else:
+                fig, axes = plt.subplots(2, total_slices//2, figsize=(20, 10))
+                ax = axes.ravel()
+        fig.patch.set_facecolor('black')
+
+        for i, key in enumerate(filter.keys()):
+            ## Merge predictions
+            prediction += i*mask[key]
+
+        logger.info(f"PLOTTING {tag} with mask shape: {prediction.shape}")
+        img = image[self.slice_number-self.num_slices:self.slice_number+self.num_slices+1]
+        prediction = prediction[self.slice_number-self.num_slices:self.slice_number+self.num_slices+1]
+
+        slice_nums = np.arange(self.slice_number-self.num_slices, self.slice_number+self.num_slices+1, 1)
+        for i in range(total_slices):
+            pred = prediction[i]
+            im = self.wl_norm(img[i], 400, 50)
+            ax[i].set_title(f'Slice: {slice_nums[i]}', c='white', size=20)
+            ax[i].imshow(im, cmap='gray')
+            ax[i].imshow(np.where(pred == 0, np.nan, pred), cmap='plasma_r', alpha=0.5)
+
+        output_filename = os.path.join(self.output_dir, tag + '.png')
+        fig.savefig(output_filename)
+        return output_filename
 
     @staticmethod
     def wl_norm(img, window, level):

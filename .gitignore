@@ -3,4 +3,5 @@ models/
 *.dcm
 bin/
 data/outputs/*
+data/db/*
 logs/*
