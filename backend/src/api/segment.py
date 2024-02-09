@@ -116,8 +116,6 @@ def infer_segment():
         
         #############################################################################
 
-
-
         output_dir = os.path.join(current_app.config['OUTPUT_DIR'], req["project"], req["patient_id"], req["series_uuid"])
         os.makedirs(output_dir, exist_ok=True)
         req['output_dir'] = output_dir

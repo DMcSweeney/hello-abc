@@ -19,7 +19,7 @@ from scipy.special import softmax
 import skimage
 from flask import abort
 
-from abcTK.segment.writer import sanityWriter
+from abcTK.writer import sanityWriter
 
 logger = logging.getLogger(__name__)
 
@@ -377,6 +377,8 @@ class segmentationEngine():
         # Extract IMAT from muscle segmentation: fatByThreshold U muscleSegmentation
 
         logging.info(f"Generating IMAT mask using thresholds: {self.thresholds['IMAT']}")
+        #TODO Make this faster!! This seems to be relatively slow (~1sec)
+
         blurred_image = skimage.filters.gaussian(numpyImage, sigma=0.5, preserve_range=True)
         fat_threshold = np.logical_and(
             blurred_image >= self.thresholds['IMAT'][0],

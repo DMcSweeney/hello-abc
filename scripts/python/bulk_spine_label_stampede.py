@@ -7,8 +7,8 @@ import requests
 import polars as pl
 import json
 
-toolkit_url = 'http://10.127.3.73:5001' ## Toolkit url
-xnat_url = 'http://10.127.3.73:8080'
+toolkit_url = 'http://10.127.3.38:5001' ## Toolkit url
+xnat_url = 'http://10.127.3.38:8080'
 
 ## Path inside container
 path_to_archive = '/data/inputs/'
@@ -30,7 +30,7 @@ def get_paths(df):
                 continue
 
             res = res.json()
-            print(res)
+            #print(res)
 
             ## Filter based on number of files
             if res['items'][0]['children'][0]['items'][0]['data_fields']['file_count'] <= 10:
@@ -40,6 +40,8 @@ def get_paths(df):
             path = path.replace('/data/xnat/archive/', path_to_archive)
             
             paths[uri] = path
+
+            break
         
     return paths
 
@@ -51,7 +53,7 @@ def main():
     print(f"Attempting to submit {len([x for x in paths.keys()])} requests")
     for uri, path in paths.items():
         
-        data = {'input_path': path, 'project': 'prelimBaselineCTs'}#
+        data = {'input_path': path, 'project': 'testingBaselineCTs', 'series_uuid': 'dave'}
         headers = {"Content-Type": "application/json", 'Accept':'application/json'}
         print(f'Submitting data -- {data} -- with headers {headers}')
         response = requests.post(f"{toolkit_url}/api/infer/spine", json=data, headers=headers)

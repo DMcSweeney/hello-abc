@@ -10,6 +10,7 @@ import json
 import logging
 
 from abcTK.spine.server import spineApp
+from abcTK.writer import sanityWriter
 from app import mongo
 #import models
 
@@ -65,9 +66,7 @@ def infer_spine():
         response = app.infer(request = {"model": "vertebra_pipeline", "image": req['input_path']})
         logger.info(f"Spine labelling complete: {response}")
         
-        json_output_path = os.path.join(output_dir, 'json')
-        os.makedirs(json_output_path, exist_ok=True)
-        res = handle_response(response, json_output_path)
+        res, output_filename = handle_response(req['input_path'], response, output_dir, req['loader_function'][0])
 
         #######  UPDATE DATABASE #######
         database = mongo.db # Access the database
@@ -85,6 +84,7 @@ def infer_spine():
         payload = {
             "_id": req['series_uuid'] ,"patientID": req['patient_id'], "project": req['project'], "path": req['input_path'], "series_uuid": req['series_uuid'],
             "message": res.json['message'],
+            "path_to_sanity_image": output_filename,
             "prediction": res.json['prediction'], "all_parameters": {k: str(v) for k, v in req.items()}
         }
         database.spine.replace_one({"_id": req['series_uuid']}, payload, upsert=True)
@@ -115,7 +115,6 @@ def get_loader_function(path):
         dcm_names = reader.GetGDCMSeriesFileNames(path)
         reader.SetFileNames(dcm_names)
         return reader.Execute()
-    
 
     if os.path.isdir(path):
         ## Check at least one dicom file
@@ -183,10 +182,14 @@ def json_to_file(json_payload, output_path, filename='spine-output.json'):
     with open(output_filename, 'w') as f:
         json.dump(json_payload, f)
 
-def handle_response(res, output_path):
+def handle_response(image_path, res, output_dir, loader_function):
     """
     Handle the reply from inference 
     """
+    json_output_path = os.path.join(output_dir, 'json')
+    os.makedirs(json_output_path, exist_ok=True)
+    writer = sanityWriter(output_dir, slice_number=None, num_slices=None)
+
     label = res["file"]
     label_json = res["params"]
 
@@ -196,16 +199,18 @@ def handle_response(res, output_path):
         res = make_response(jsonify({
             "message": "No centroids detected"
         }), 500)
+        output_filename = None
     
     elif label is None and label_json is not None:
         ## Prettify the json
-        json_to_file(label_json, output_path, filename='all-spine-outputs.json')
+        json_to_file(label_json, json_output_path, filename='all-spine-outputs.json')
         pretty_json = prettify_json(label_json)
-        json_to_file(pretty_json, output_path)
-        
-        logger.error("No centroids detected")
+        json_to_file(pretty_json, json_output_path)
+        output_filename = writer.write_spine_sanity('SPINE', image_path, pretty_json, loader_function)
+
         res = make_response(jsonify({
-            "message": f"Labelling finished succesfully. Output written to: {output_path}",
+            "message": f"Labelling finished succesfully. Output written to: {json_output_path}",
+            "quality_control": f"QC image was written to: {output_filename}",
             "prediction": pretty_json
         }), 200)
     
@@ -217,8 +222,9 @@ def handle_response(res, output_path):
         res = make_response(jsonify({
             "message": "Amazing error, you broke everything"
         }), 500)
+        output_filename = None
 
-    return res
+    return res, output_filename
 
 def prettify_json(input_json):
     ## Clean spine app predictions
