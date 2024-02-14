@@ -61,8 +61,8 @@ class segmentationEngine():
         start = time.time()
 
         #* Load input volume
-        Image = loader_function(input_path) # Returns SimpleITK image and reference slice
-        Image, orient = self.reorient(Image, orientation='LPS')
+        origImage = loader_function(input_path) # Returns SimpleITK image and reference slice
+        Image, orient = self.reorient(origImage, orientation='LPS')
 
         if orient.GetFlipAxes()[-1]:
             slice_number = Image.GetSize()[-1] - int(slice_number) - 1 # Since size starts at 1 but indexing starts at 0
@@ -132,7 +132,7 @@ class segmentationEngine():
         self.extract_imat(image)
         
         #TODO IF a mask exists, read it, overwrite and save!! That way all levels will be annotated in the same file.
-        output = self.post_process(mask_dir, Image, chan2_outputs, chan3_outputs) # Returns stats for every compartment at every slice
+        output = self.post_process(mask_dir, Image, origImage, chan2_outputs, chan3_outputs) # Returns stats for every compartment at every slice
         post_processing_time = time.time() - start
         logger.info(f"Post-processing: {post_processing_time} s")
         return output 
@@ -279,7 +279,14 @@ class segmentationEngine():
             logging.info("Single channel detected, applying sigmoid")
             return np.round(self.sigmoid(outputs)).astype(np.int8)
 
-    def post_process(self, output_dir, refImage, chan2_outputs, chan3_outputs):
+    def post_process(self, output_dir, refImage, originalImage, chan2_outputs, chan3_outputs):
+        """
+        TODO: Think of a better way of doing this!
+        refImage = Image in LPS - used to reintroduce meta to torch predictions 
+        originalImage = Image in original orientation - used to rewrite in the original image frame so that RT-Structs match up with image.
+        """
+
+
         writer = sanityWriter(self.output_dir, self.slice_number, self.num_slices)
 
         ## Convert predictions to ITK images and save
@@ -294,7 +301,7 @@ class segmentationEngine():
         logger.info(f"Converting IMAT mask to ITK Image. Size: {self.holders['IMAT'].shape}")
         IMAT  = self.npy2itk(self.holders['IMAT'] , refImage)
         logger.info("Writing IMAT mask")
-        self.save_prediction(output_dir, 'IMAT', IMAT)
+        self.save_prediction(output_dir, 'IMAT', IMAT, originalImage)
 
         ##### =========== MUSCLE =================
         #* Remove IMAT from muscle mask
@@ -306,7 +313,7 @@ class segmentationEngine():
         logger.info(f"Converting skeletal muscle mask to ITK Image. Size: {skeletal_muscle.shape}")
         SkeletalMuscle = self.npy2itk(skeletal_muscle, refImage)
         logger.info("Writing skeletal muscle mask")
-        self.save_prediction(output_dir,'MUSCLE', SkeletalMuscle)
+        self.save_prediction(output_dir,'MUSCLE', SkeletalMuscle, originalImage)
 
         ##### =========== SUBCUT/VISCERAL FAT =================
         #* Repeat with subcut and visceral fat. if they exist
@@ -326,9 +333,9 @@ class segmentationEngine():
             VisceralFat = self.npy2itk(self.holders['visceral_fat'], refImage)
             
             logger.info("Writing subcutaneous fat mask")
-            self.save_prediction(output_dir, 'SUBCUT_FAT', SubcutaneousFat)
+            self.save_prediction(output_dir, 'SUBCUT_FAT', SubcutaneousFat, originalImage)
             logger.info("Writing visceral fat mask")
-            self.save_prediction(output_dir, 'VISCERAL_FAT', VisceralFat)
+            self.save_prediction(output_dir, 'VISCERAL_FAT', VisceralFat, originalImage)
 
         ##### =========== BODY MASK =================
         elif any(chan2_outputs) and not any(chan3_outputs):
@@ -339,7 +346,7 @@ class segmentationEngine():
             logger.info(f"Converting body mask to ITK Image. Size: {self.holders['body'].shape}")
             Body = self.npy2itk(self.holders['body'], refImage)
             logger.info("Writing body mask")
-            self.save_prediction(output_dir, 'BODY', Body)
+            self.save_prediction(output_dir, 'BODY', Body, originalImage)
         else:
             logger.warning(f"No predictions other than skeletal muscle")
         paths_to_sanity['ALL'] = writer.write_all_segmentation_sanity('ALL', self.image, self.holders, data)
@@ -387,12 +394,16 @@ class segmentationEngine():
         IMAT = np.logical_and(fat_threshold, self.holders['skeletal_muscle']).astype(np.int8)
         self.holders['IMAT'] = skimage.measure.label(IMAT, connectivity=2, return_num=False) # connected components
 
-    def save_prediction(self, output_dir, tag, Prediction):
+    def save_prediction(self, output_dir, tag, Prediction, origImage):
         #TODO Convert predictions to RTStruct instead of nii
         #TODO This writes the prediction into the frame of the re-oriented input. If original scan is not LPS, these won't match...
         #* Save mask to outputs folder
         output_filename = os.path.join(output_dir, tag + '.nii.gz')
-        logger.info(f"Saving prediction to: {output_filename}")
+        
+        # Resample Prediction to origImage
+        Prediction = sitk.Resample(Prediction, origImage, sitk.Transform(), sitk.sitkLinear, 0, origImage.GetPixelID())
+        logger.info(f"Saving prediction with shape {Prediction.GetSize()} to: {output_filename}")
+
         sitk.WriteImage(Prediction, output_filename)
     
     ###########################################################

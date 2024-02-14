@@ -165,7 +165,9 @@ def infer_segment():
             }
         #TODO if an entry exists but for different level, need to update NOT replace
 
-        database.quality_control.replace_one({"_id": req['series_uuid']}, payload, upsert=True)
+        database.quality_control.update_one({"_id": req['series_uuid']}, 
+                                            {"$set": {"paths_to_sanity_images": paths_to_sanity, f"quality_control.{req['vertebra']}": 2} },
+                                            upsert=True)
         logger.info(f"Inserted {payload} into collection: quality_control")
         
         return res

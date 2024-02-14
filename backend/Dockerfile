@@ -1,7 +1,7 @@
 FROM python:3.10
 
 RUN apt-get update && apt-get upgrade -y
-RUN apt-get install gcc
+RUN apt-get install gcc ffmpeg libsm6 libxext6  -y
 
 # Mount the data directory
 VOLUME [ "/data" ]

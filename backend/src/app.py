@@ -1,13 +1,11 @@
 """
 Main flask application
 """
-
-import os
 import logging
 from flask import Flask
 from flask_cors import CORS
-from flask_sqlalchemy import SQLAlchemy
 from flask_pymongo import PyMongo
+
 
 import main
 from config import BaseConfig
@@ -34,21 +32,21 @@ logging.info(f"Starting connection to: {app.config['MONGO_URI']}")
 #Connect to MongoDB server
 mongo = PyMongo(app)
 
-from api import spine, segment, sanity #import here to bypass circular imports
+from api import spine, segment, sanity, post_process #import here to bypass circular imports
 
 # Add blueprints
 app.register_blueprint(main.bp)
 app.register_blueprint(spine.bp)
 app.register_blueprint(segment.bp)
 app.register_blueprint(sanity.bp)
+app.register_blueprint(post_process.bp)
 
 app.add_url_rule('/', endpoint='main')
-
 
 # with App.app_context():
 #     init_models(db)
 
-CORS(app) # Allow Cross-origin requests~
+CORS(app, resources={r"/api/*": {"origins": "*"}}) # Allow Cross-origin requests~
 logger.info("App started")
 
 

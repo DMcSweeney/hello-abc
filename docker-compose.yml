@@ -1,4 +1,4 @@
-version: '0'
+version: '3'
 
 services:
   # Web server
@@ -39,6 +39,14 @@ services:
               capabilities: [gpu]
     depends_on:
       - mongo
+
+  # dicom: 
+  #   build: ./dicom/
+  #   ports:
+  #     - '11112:11112'
+  #   volumes: 
+  #    - ./data:/data
+  #    - ./dicom/src:/src
 
   mongo:
     image: 'mongo:6.0-jammy'

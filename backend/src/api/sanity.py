@@ -3,23 +3,102 @@ Script with sanity checking endpoints
 """
 import base64
 import logging
-from flask import Blueprint, request, make_response, jsonify
+from flask import Blueprint, request, make_response, jsonify, abort
 from app import mongo
 
 bp = Blueprint('api/sanity', __name__)
 logger = logging.getLogger(__name__)
 
-@bp.route('/api/sanity/fetch_first_image', methods=["GET"])
-def fetchFirstImage():
+@bp.route('/api/sanity/fetch_first_image', methods=["POST"])
+def fetchFirstImage():#
+    project = request.args.get("project")
+
     ## Figure out what image to retrieve
     vertebra = 'L3'
     database = mongo.db 
     response = database.quality_control.find_one({
-        f"quality_control.{vertebra}": 2
+        f"quality_control.{vertebra}": 2, 'project': project
     })
+
+    im_info = database.images.find_one({"_id": response["_id"]})
 
     #TODO Faster if image stored in db? Instead of loading and converting
     path_to_sanity_ = response['paths_to_sanity_images']['ALL'] 
+    with open(path_to_sanity_, 'rb') as f:
+        image = bytearray(f.read())
+    encoded_im = base64.b64encode(image).decode('utf8').replace("'",'"')
+
+    res = make_response(jsonify({
+        "message": "Here's your image",
+        "image": encoded_im,
+        "patient_id": response["patientID"],
+        "status": response["quality_control"][vertebra],
+        "series_uuid": im_info["series_uuid"],
+        "acquisition_date": im_info["acquisition_date"],
+        "input_path": im_info["input_path"],
+        "vertebra": vertebra
+    }), 200)
+
+    return res
+
+
+@bp.route('/api/sanity/fetch_image_by_id', methods=["POST"])
+def fetchImageByID():
+    _id = request.args.get("_id")
+    project = request.args.get("project")
+    vertebra = 'L3'
+    database = mongo.db 
+    response = database.quality_control.find_one({f"_id": _id,'project': project})
+    im_info = database.images.find_one({"_id": response["_id"]})
+
+    #TODO Faster if image stored in db? Instead of loading and converting
+    path_to_sanity_ = response['paths_to_sanity_images']['ALL'] 
+    with open(path_to_sanity_, 'rb') as f:
+        image = bytearray(f.read())
+    encoded_im = base64.b64encode(image).decode('utf8').replace("'",'"')
+
+    res = make_response(jsonify({
+        "message": "Here's your image",
+        "image": encoded_im,
+        "patient_id": response["patientID"],
+        "status": response["quality_control"][vertebra],
+        "series_uuid": im_info["series_uuid"],
+        "acquisition_date": im_info["acquisition_date"],
+        "input_path": im_info["input_path"],
+        "vertebra": vertebra
+    }), 200)
+
+    return res
+
+
+@bp.route('/api/sanity/fetch_image_list', methods=["POST"])
+def fetchImageList():
+    project = request.args.get("project")
+    # Figure out what image to retrieve
+    vertebra = 'L3'
+    database = mongo.db 
+    cursor = database.quality_control.find({'project': project}, {'_id': 1, f'quality_control.{vertebra}': 1}).sort(f"quality_control.{vertebra}", -1)
+    #TODO There must be a better way to do this?
+    ids = []
+    for doc in cursor:
+        ids.append(doc['_id'])
+    print(ids, flush=True)
+    res = make_response(jsonify({
+        "message": "Here's your list of IDs",
+        "id_list": ids
+    }), 200)
+    return res
+
+
+
+@bp.route('/api/sanity/fetch_spine_by_id', methods=["POST"])
+def fetchSpineByID():
+    _id = request.args.get("_id")
+    project = request.args.get("project")
+    database = mongo.db 
+    response = database.quality_control.find_one({f"_id": _id, 'project': project})
+    #TODO Faster if image stored in db? Instead of loading and converting
+    path_to_sanity_ = response['path_to_spine_image']
     with open(path_to_sanity_, 'rb') as f:
         image = bytearray(f.read())
     encoded_im = base64.b64encode(image).decode('utf8').replace("'",'"')
@@ -32,21 +111,40 @@ def fetchFirstImage():
 
     return res
 
-@bp.route('/api/sanity/fetch_image_list', methods=["GET"])
-def fetchImageList():
-    # Figure out what image to retrieve
+@bp.route('/api/sanity/pass_qa', methods=["POST"])
+def pass_qa():
+    project = request.args.get("project")
+    _id = request.args.get("_id")
     vertebra = 'L3'
     database = mongo.db 
-    cursor = database.quality_control.find({
-        f"quality_control.{vertebra}": 2
-    })
-    for doc in cursor:
-        print(doc, flush=True)
+    database.quality_control.update_one({f"_id": _id, 'project': project}, {'$set': {f'quality_control.{vertebra}': 1, 'quality_control.SPINE': 1} })
 
     res = make_response(jsonify({
-        "message": "Here's your list",
+        "message": "QA pass recorded"
     }), 200)
-    
-    #TODO return series IDs for faster retrieve?
+
+    return res
+
+
+@bp.route('/api/sanity/fail_qa', methods=["POST"])
+def fail_qa():
+    project = request.args.get("project")
+    _id = request.args.get("_id")
+    mode = request.args.get("mode")
+    vertebra = 'L3'
+    database = mongo.db 
+
+    if mode == 'segmentation':
+        database.quality_control.update_one({f"_id": _id, 'project': project},  {'$set': {f'quality_control.{vertebra}': 0, f'quality_control.SPINE': 1} })
+    elif mode == 'labelling':
+        database.quality_control.update_one({f"_id": _id,'project': project},  {'$set': {f'quality_control.SPINE': 0, f'quality_control.{vertebra}': 1} })
+    elif mode == 'both':
+        database.quality_control.update_one({f"_id": _id,'project': project},  {'$set': {f'quality_control.SPINE': 0, f'quality_control.{vertebra}': 0} })
+    else:
+        abort(400)
+
+    res = make_response(jsonify({
+        "message": "QA fail recorded"
+    }), 200)
 
     return res

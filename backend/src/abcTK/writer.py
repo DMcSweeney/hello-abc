@@ -31,7 +31,7 @@ class sanityWriter():
         image = self.convolve_gaussian(image, axis=-1, sigma=3) ## Remove the ribs!!
         mip = np.max(image, axis=-1)
         ## Plot
-        fig, ax = plt.subplots(1, 1, figsize=(5, 10))
+        fig, ax = plt.subplots(1, 1, figsize=(5, 7))
         fig.patch.set_facecolor('black')
         #ax.axis('off')
         ax.imshow(mip, cmap='gray')
