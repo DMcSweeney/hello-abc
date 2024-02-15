@@ -306,12 +306,12 @@ class segmentationEngine():
         ##### =========== MUSCLE =================
         #* Remove IMAT from muscle mask
         logger.info("Extracting skeletal muscle stats")
-        skeletal_muscle = np.where(self.holders['IMAT'] == 1, 0, self.holders['skeletal_muscle']).astype(np.int8)
+        self.holders['skeletal_muscle'] = np.where(self.holders['IMAT'] == 1, 0, self.holders['skeletal_muscle']).astype(np.int8)
         data['skeletal_muscle'] = self.extract_stats(self.holders['skeletal_muscle'], self.thresholds['skeletal_muscle'])
         logger.info("Writing skeletal muscle sanity check")
         paths_to_sanity['skeletal_muscle'] =writer.write_segmentation_sanity('MUSCLE', self.image, self.holders['skeletal_muscle'])
-        logger.info(f"Converting skeletal muscle mask to ITK Image. Size: {skeletal_muscle.shape}")
-        SkeletalMuscle = self.npy2itk(skeletal_muscle, refImage)
+        logger.info(f"Converting skeletal muscle mask to ITK Image. Size: {self.holders['skeletal_muscle'].shape}")
+        SkeletalMuscle = self.npy2itk(self.holders['skeletal_muscle'], refImage)
         logger.info("Writing skeletal muscle mask")
         self.save_prediction(output_dir,'MUSCLE', SkeletalMuscle, originalImage)
 
@@ -349,6 +349,7 @@ class segmentationEngine():
             self.save_prediction(output_dir, 'BODY', Body, originalImage)
         else:
             logger.warning(f"No predictions other than skeletal muscle")
+            
         paths_to_sanity['ALL'] = writer.write_all_segmentation_sanity('ALL', self.image, self.holders, data)
         return data, paths_to_sanity
 

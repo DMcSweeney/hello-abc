@@ -6,8 +6,8 @@ import os
 import requests
 import sqlite3
 
-toolkit_url = 'http://10.127.3.38:5001' ## Toolkit url
-xnat_url = 'http://10.127.3.38:8080'
+toolkit_url = 'http://10.127.3.167:5001' ## Toolkit url
+xnat_url = 'http://10.127.3.167:8080'
 
 input_db = './outputs/baselineSpine.db'
 output_db = './outputs/baselineSegmentation.db'

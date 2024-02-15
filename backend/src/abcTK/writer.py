@@ -97,8 +97,9 @@ class sanityWriter():
         fig.patch.set_facecolor('black')
 
         for i, key in enumerate(filter.keys()):
+            logger.info(f"Adding {key} to prediction")
             ## Merge predictions
-            prediction += i*mask[key]
+            prediction += (i+1)*mask[key]
 
         logger.info(f"PLOTTING {tag} with mask shape: {prediction.shape}")
         img = image[self.slice_number-self.num_slices:self.slice_number+self.num_slices+1]
@@ -110,7 +111,7 @@ class sanityWriter():
             im = self.wl_norm(img[i], 400, 50)
             ax[i].set_title(f'Slice: {slice_nums[i]}', c='white', size=20)
             ax[i].imshow(im, cmap='gray')
-            ax[i].imshow(np.where(pred == 0, np.nan, pred), cmap='plasma_r', alpha=0.5)
+            ax[i].imshow(np.where(pred == 0, np.nan, pred), cmap='jet', alpha=0.5)
 
         output_filename = os.path.join(self.output_dir, tag + '.png')
         fig.savefig(output_filename)
