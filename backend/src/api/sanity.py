@@ -82,7 +82,7 @@ def fetchImageList():
     ids = []
     for doc in cursor:
         ids.append(doc['_id'])
-    print(ids, flush=True)
+    
     res = make_response(jsonify({
         "message": "Here's your list of IDs",
         "id_list": ids

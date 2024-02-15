@@ -1,5 +1,4 @@
 curl --request POST\
 	 --header "Content-Type: application/json"\
-	 --data '{"input_path": "/data/inputs/test", "project": "foo", "vertebra": "L3", "slice_number": "48",
-	 "series_uuid": "bar", "num_slices": "1"}'\
+	 --data '{"input_path": "/data/inputs/1045", "project": "testME", "vertebra": "L3", "num_slices": "1"}'\
     http://localhost:5001/api/infer/segment

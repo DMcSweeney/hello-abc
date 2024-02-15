@@ -8,6 +8,7 @@ import time
 import logging
 import SimpleITK as sitk
 import numpy as np
+from scipy import signal
 
 import torch
 import onnxruntime as ort
@@ -201,16 +202,16 @@ class segmentationEngine():
             return None
         
         if self.worldmatch_correction:
-            logging.info("Applying worldmatch correction (-1024 HU)")
+            logger.info("Applying worldmatch correction (-1024 HU)")
             im -= 1024
 
         self.settings = self._get_window_level()
-        logging.info(f"Window/Level ({self.settings['window']}/{self.settings['level']}) normalisation")
+        logger.info(f"Window/Level ({self.settings['window']}/{self.settings['level']}) normalisation")
         im = self.wl_norm(im, window=self.settings['window'], level=self.settings['level'])
         
-        logging.info(f"Converting input to three channels")
+        logger.info(f"Converting input to three channels")
         im = self.expand(im) #* 3 channels
-        logging.info(f"Applying transforms: {self.transforms}")
+        logger.info(f"Applying transforms: {self.transforms}")
         augmented = self.transforms(image=im)
         return augmented['image']
     
@@ -262,21 +263,21 @@ class segmentationEngine():
         t= time.time()
         ort_inputs = {self.ort_session.get_inputs()[0].name: \
             img.astype(np.float32)}
-        logging.info(f'Model load time (s): {np.round(time.time() - t, 7)}')
+        logger.info(f'Model load time (s): {np.round(time.time() - t, 7)}')
         #* Inference
         t= time.time()
         outputs = np.array(self.ort_session.run(None, ort_inputs)[0])
         outputs = np.squeeze(outputs)
-        logging.info(f'Inference time (s): {np.round(time.time() - t, 7)}')
-        logging.info(f"Model outputs: {outputs.shape}")
+        logger.info(f'Inference time (s): {np.round(time.time() - t, 7)}')
+        logger.info(f"Model outputs: {outputs.shape}")
 
         if outputs.shape[0] in [3, 4]:
-            logging.info("Multiple channels detected, applying softmax")
+            logger.info("Multiple channels detected, applying softmax")
             pred = np.argmax(softmax(outputs, axis=0), axis=0).astype(np.int8) # Argmax then one-hot encode
             preds = [np.where(pred == val, 1, 0) for val in np.unique(pred)] # one-hot encode
             return np.stack(preds)
         else:
-            logging.info("Single channel detected, applying sigmoid")
+            logger.info("Single channel detected, applying sigmoid")
             return np.round(self.sigmoid(outputs)).astype(np.int8)
 
     def post_process(self, output_dir, refImage, originalImage, chan2_outputs, chan3_outputs):
@@ -285,7 +286,6 @@ class segmentationEngine():
         refImage = Image in LPS - used to reintroduce meta to torch predictions 
         originalImage = Image in original orientation - used to rewrite in the original image frame so that RT-Structs match up with image.
         """
-
 
         writer = sanityWriter(self.output_dir, self.slice_number, self.num_slices)
 
@@ -382,21 +382,21 @@ class segmentationEngine():
 
     def extract_imat(self, numpyImage):
         # Extract IMAT from muscle segmentation: fatByThreshold U muscleSegmentation
-
-        logging.info(f"Generating IMAT mask using thresholds: {self.thresholds['IMAT']}")
+        logger.info(f"Generating IMAT mask using thresholds: {self.thresholds['IMAT']}")
         #TODO Make this faster!! This seems to be relatively slow (~1sec)
 
-        blurred_image = skimage.filters.gaussian(numpyImage, sigma=0.5, preserve_range=True)
+        #blurred_image = skimage.filters.gaussian(numpyImage, sigma=3, preserve_range=True)
+        blurred_image = self.convolve_gaussian(numpyImage, axis=None, sigma=0.5)
         fat_threshold = np.logical_and(
             blurred_image >= self.thresholds['IMAT'][0],
             blurred_image <= self.thresholds['IMAT'][1]
             ).astype(np.int8)
         IMAT = np.logical_and(fat_threshold, self.holders['skeletal_muscle']).astype(np.int8)
-        self.holders['IMAT'] = skimage.measure.label(IMAT, connectivity=2, return_num=False) # connected components
+        connected_components = skimage.measure.label(IMAT, connectivity=2, return_num=False) # connected components
+        # Each component is assigned a diff. label so need to cast to 1
+        self.holders['IMAT'] = np.where(connected_components != 0, 1, 0)
 
     def save_prediction(self, output_dir, tag, Prediction, origImage):
-        #TODO Convert predictions to RTStruct instead of nii
-        #TODO This writes the prediction into the frame of the re-oriented input. If original scan is not LPS, these won't match...
         #* Save mask to outputs folder
         output_filename = os.path.join(output_dir, tag + '.nii.gz')
         
@@ -435,7 +435,18 @@ class segmentationEngine():
         orient = sitk.DICOMOrientImageFilter()
         orient.SetDesiredCoordinateOrientation(orientation)
         return orient.Execute(Image), orient
-    
+
+    @staticmethod
+    def convolve_gaussian(image, axis=-1, sigma=3):
+        #* Convolve image with 1D gaussian  
+        t = np.linspace(-10, 10, 30)
+        eps = 1e-24
+        gauss = np.exp(-t**2 / (2 * (sigma + eps)**2))
+        gauss /= np.trapz(gauss)  # normalize the integral to 1
+        kernel = gauss[None, None, :]*gauss[:, None, None]*gauss[None, :, None]
+        logger.info(f"Kernel size: {kernel.shape}")
+        return signal.fftconvolve(image, kernel, mode='same', axes=axis)
+
     #####################################################
     #*  ================= OPTIONS ==================
     #####################################################

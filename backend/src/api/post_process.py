@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 @bp.route('/api/post_process/get_rt_struct', methods=["POST"])
 def getRTStruct():
     _id = request.args.get("_id")
-    
+    project = request.args.get("project")
+
     database = mongo.db 
-    response = database.segmentation.find_one({f"_id": _id}, {"output_dir": 1, "path": 1})
-    print(response, flush=True)
+    response = database.segmentation.find_one({f"_id": _id, "project": project}, {"output_dir": 1, "path": 1})
     path_to_preds = os.path.join(response['output_dir'], 'masks')
 
     ## Go through output dir and read all masks into one RT-Struct
@@ -46,9 +46,17 @@ def getRTStruct():
 
     return res
     
-@bp.route('/api/post_process/get_stats_metric', methods=["POST"])
-def get_stats_metric():
+@bp.route('/api/post_process/get_stats', methods=["POST"])
+def get_stats():
+    _id = request.args.get("_id")
+    project = request.args.get("project")
+    vertebra = 'L3' ##TODO This should be a variable
+
     
+    database = mongo.db
+    response = database.segmentation.find_one({"_id": _id, "project": project})
     
-    
+    for type_, dict_ in response["statistics"].items():
+        ...
+
     ...
