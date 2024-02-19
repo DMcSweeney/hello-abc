@@ -31,7 +31,7 @@ def fetchFirstImage():#
     res = make_response(jsonify({
         "message": "Here's your image",
         "image": encoded_im,
-        "patient_id": response["patientID"],
+        "patient_id": response["patient_id"],
         "status": response["quality_control"][vertebra],
         "series_uuid": im_info["series_uuid"],
         "acquisition_date": im_info["acquisition_date"],
@@ -60,7 +60,7 @@ def fetchImageByID():
     res = make_response(jsonify({
         "message": "Here's your image",
         "image": encoded_im,
-        "patient_id": response["patientID"],
+        "patient_id": response["patient_id"],
         "status": response["quality_control"][vertebra],
         "series_uuid": im_info["series_uuid"],
         "acquisition_date": im_info["acquisition_date"],
@@ -98,7 +98,7 @@ def fetchSpineByID():
     database = mongo.db 
     response = database.quality_control.find_one({f"_id": _id, 'project': project})
     #TODO Faster if image stored in db? Instead of loading and converting
-    path_to_sanity_ = response['path_to_spine_image']
+    path_to_sanity_ = response['paths_to_sanity_images']['SPINE'] 
     with open(path_to_sanity_, 'rb') as f:
         image = bytearray(f.read())
     encoded_im = base64.b64encode(image).decode('utf8').replace("'",'"')
@@ -106,7 +106,7 @@ def fetchSpineByID():
     res = make_response(jsonify({
         "message": "Here's your image",
         "image": encoded_im,
-        "patient_id": response["patientID"],
+        "patient_id": response["patient_id"],
     }), 200)
 
     return res
