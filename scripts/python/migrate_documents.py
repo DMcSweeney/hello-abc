@@ -6,11 +6,12 @@ import SimpleITK as sitk
 from pymongo import MongoClient
 from datetime import datetime
 from database import collections as cl
-
+from tqdm import tqdm
 
 def handle_request(req):
+    path_on_host = req['input_path'].replace('/data/inputs/', '/mnt/d/xnat/1.8/archive/')
     ## Handle paramaters and extract info from dicom header if not provided.
-    dcm_files = [x for x in os.listdir(req['input_path']) if x.endswith('.dcm')]
+    dcm_files = [x for x in os.listdir(path_on_host) if x.endswith('.dcm')]
     if len(dcm_files) == 0:
         raise ValueError
     
@@ -22,7 +23,7 @@ def handle_request(req):
         'slice_thickness': '0018|0050',
         'acquisition_date': '0008|0022'
     }
-    items = read_dicom_header(os.path.join(req["input_path"], dcm_files[0]), header_keys=header_keys)
+    items = read_dicom_header(os.path.join(path_on_host, dcm_files[0]), header_keys=header_keys)
 
     ## Add to request
     for key, val in items.items():
@@ -66,30 +67,87 @@ def read_dicom_header(path, header_keys):
             data[key] = None # For sql
     return data
 
-def update_collection(database, document, collection):
+def update_collection(database, document, collection, **kwargs):
     if collection == 'images':
+        if 'path' not in document:
+            ## I.e. it has already been converted to new schema
+            return
         params = handle_request(req={'input_path': document['path']})
 
 
         update = cl.Images(_id=document['_id'], project=document['project'], patient_id=document['patientID'],
-                           input_path=document['path'], series_uuid=document['series_uuid'],
+                            series_uuid=document['series_uuid'],
                            labelling_done=document['spine_labelling_done'], **params
                            )
 
-        database.replace_one({'_id': update['_id']}, update.__dict__, upsert=True)
+        database.replace_one({'_id': document['_id']}, update.__dict__, upsert=True)
+
+    if collection == 'spine':
+        if 'path' not in document:
+            ## I.e. it has already been converted to new schema
+            return 
+
+        update = cl.Spine(_id=document['_id'], project=document['project'], input_path=document['path'],
+            patient_id=document['patientID'], series_uuid=document['series_uuid'],
+            prediction=document['prediction'], output_dir=document['path_to_sanity_image'].split('/sanity/')[0],
+            all_parameters=document['all_parameters'])
+        database.replace_one({'_id': document['_id']}, update.__dict__, upsert=True)
+
+    if collection == 'quality_control':
+        if 'patient_id' in document:
+            return
+
+        out = kwargs['root_db'].spine.find_one({'_id': document['_id']}, {'output_dir': 1, 'project': 1, 'input_path': 1, 'patient_id': 1,
+        'series_uuid':1})
+        sanity_images = {'SPINE': os.path.join(out['output_dir'], 'sanity/SPINE.png'), **document['paths_to_sanity_images']}
+        qc = {'SPINE': 2, **document['quality_control']}
+        update = cl.QualityControl(_id=document['_id'], project=out['project'], input_path=out['input_path'],
+            patient_id=out['patient_id'], series_uuid=out['series_uuid'],
+            paths_to_sanity_images=sanity_images,
+            quality_control=qc)
+        database.replace_one({'_id': document['_id']}, update.__dict__, upsert=True)
+
+    if collection == 'segmentation':
+        out = kwargs['root_db'].spine.find_one({'_id': document['_id']}, {'output_dir': 1, 'project': 1, 'input_path': 1, 'patient_id': 1,
+        'series_uuid':1})
+        update = cl.Segmentation(_id=document['_id'], project=out['project'], input_path=out['input_path'],
+            patient_id=out['patient_id'], series_uuid=out['series_uuid'],
+            output_dir=out['output_dir'], statistics=document['statistics'], all_parameters=document['all_parameters']
+            )
+        database.replace_one({'_id': document['_id']}, update.__dict__, upsert=True)
 
 
 def main():
-    client = MongoClient("mongodb://abc-user:abc-toolkit@10.127.3.158:5002/db?authSource=admin")
+    client = MongoClient("mongodb://abc-user:abc-toolkit@localhost:5002/db?authSource=admin")
     database = client.db
 
-    docs = database.images.find({})
+    ## Update images database
+    # docs = database.images.find({})
+    # for doc in tqdm(docs):
+    #     #print(doc)
+    #     update_collection(database.images, doc, 'images')
+    #     # break
 
-    for doc in docs:
-        print(doc)
-        update_collection(database.images, doc, 'images')
-        break
+    # Update spine database
+    # docs = database.spine.find({})
+    # for doc in tqdm(docs):
+    #     #print(doc)
+    #     update_collection(database.spine, doc, 'spine')
+    #     break
 
+    # Update QC database
+    # docs = database.quality_control.find({})
+    # for doc in tqdm(docs):
+    #     print(doc)
+    #     update_collection(database.quality_control, doc, 'quality_control', root_db = database)
+    #     break
+
+    # Update segmentation database
+    docs = database.segmentation.find({})
+    for doc in tqdm(docs):
+        #print(doc)
+        update_collection(database.segmentation, doc, 'segmentation', root_db = database)
+        #break
 
 
 if __name__ == '__main__':

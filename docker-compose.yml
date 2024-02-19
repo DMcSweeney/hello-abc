@@ -21,7 +21,8 @@ services:
     ports:
      - '5001:5001'
     volumes: 
-     - ./data:/data
+     - /mnt/d/xnat/1.8/archive:/data/inputs
+     - ./data/outputs:/data/outputs
      - ./backend/src:/src
      - ./logs:/var/log
      - ./backend/models:/src/models
