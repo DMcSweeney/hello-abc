@@ -7,6 +7,7 @@ from flask import Blueprint, make_response, jsonify, request
 from app import mongo
 import SimpleITK as sitk
 import numpy as np
+import json
 
 from rt_utils import RTStructBuilder
 
@@ -48,15 +49,36 @@ def getRTStruct():
     
 @bp.route('/api/post_process/get_stats', methods=["POST"])
 def get_stats():
-    _id = request.args.get("_id")
-    project = request.args.get("project")
-    vertebra = 'L3' ##TODO This should be a variable
+    req = request.get_json()
+    _id = req['_id']
+    project = req['project']
 
+    if 'format' in req:
+        ###
+        ...
+    else:
+        req['format'] = 'voxels'
+
+    vertebra = 'L3' ##TODO This should be a variable
     
     database = mongo.db
     response = database.segmentation.find_one({"_id": _id, "project": project})
-    
+    data = {}
     for type_, dict_ in response["statistics"].items():
-        ...
+        if req['format'] == 'metric':
+            logger.info("Converting areas to mm2")
 
-    ...
+            spacing = database.images.find_one({"_id": _id, "project": project}, {'pixel_spacing': 1})
+            print('SPACING', spacing, flush=True)
+            
+        areas = [x['area (voxels)'] for x in dict_.values()]
+        densities = [x['density (HU)'] for x in dict_.values()]
+        data[type_] = {'mean-area': np.mean(areas), 'stdev-area': np.std(areas),
+                        'mean-density': np.mean(densities), 'stdev-density': np.std(densities),
+                         **dict_}
+
+    res = make_response(jsonify({
+        "message": "Stats returned successfully",
+        "data": data
+    }), 200)
+    return res

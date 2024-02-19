@@ -14,6 +14,9 @@ from flask import Blueprint, request, make_response, abort, jsonify, current_app
 from celery import Celery
 
 from abcTK.segment.engine import segmentationEngine
+import abcTK.database.collections as cl
+
+
 from app import mongo
 
 
@@ -135,40 +138,34 @@ def infer_segment():
             "time": f"Pipeline took {round(end-start, 3)} seconds"
         }), 200)
 
-        ## Insert into database
+        ###### UPDATE DATABASE ########
         database = mongo.db
+        query = database.quality_control.find_one({'_id': req['series_uuid'], 'project': req['project']},
+                                                   {"_id": 1, "quality_control": 1, "paths_to_sanity_images": 1})
+        
+        print(query, flush=True)
+        ## Update with existing values
+        for k, v in query['paths_to_sanity_images'].items():
+            paths_to_sanity[k] = v
+        qc = {req['vertebra']: 2}
+        for k, v in query['quality_control'].items():
+            qc[k] = v
+
+
+        ## Insert into database
+        segmentation_update = cl.Segmentation(_id=req['series_uuid'], project=req['project'], input_path=req['input_path'], 
+                                              patient_id=req['patient_id'], series_uuid=req['series_uuid'], output_dir=output_dir, statistics=data,
+                                              all_parameters={k: str(v) for k, v in req.items()})
+        qc_update = cl.QualityControl(_id=req['series_uuid'], project=req['project'], input_path=req['input_path'], patient_id=req['patient_id'],
+                                      series_uuid=req['series_uuid'], paths_to_sanity_images=paths_to_sanity, quality_control=qc
+                                      )
 
         database.images.update_one({"_id": req['series_uuid']}, {"$set": {"segmentation_done": True}}, upsert=True)
-        logger.info(f"Updated collection: images")
-        
-
-        payload = {
-            "_id": req['series_uuid'] ,"patientID": req['patient_id'], "project": req['project'],
-            "path": req['input_path'], "series_uuid": req['series_uuid'],
-
-            ### PATH TO MASKS
-            "output_dir": output_dir, "paths_to_sanity_images": paths_to_sanity,
-            ### STATS
-            "statistics": data,
-            ## PARAMS
-            "all_parameters": {k: str(v) for k, v in req.items()}
-        }
-        database.segmentation.replace_one({"_id": req['series_uuid']}, payload, upsert=True)
-        logger.info(f"Inserted {payload} into collection: segmentation")
-
-        payload = {"_id": req['series_uuid'] ,"patientID": req['patient_id'], "project": req['project'],
-            "path": req['input_path'], "series_uuid": req['series_uuid'],
-            "paths_to_sanity_images": paths_to_sanity,
-            f"quality_control": {
-                req['vertebra']: 2 # 0, failed; 1, passed; 2, unseen
-                }
-            }
-        #TODO if an entry exists but for different level, need to update NOT replace
-
-        database.quality_control.update_one({"_id": req['series_uuid']}, 
-                                            {"$set": {"paths_to_sanity_images": paths_to_sanity, f"quality_control.{req['vertebra']}": 2} },
-                                            upsert=True)
-        logger.info(f"Inserted {payload} into collection: quality_control")
+        logger.info(f"Set segmentation_done to True in collection: images")
+        database.segmentation.update_one({"_id": req['series_uuid']}, {'$set': segmentation_update.__dict__}, upsert=True)
+        logger.info(f"Inserted {segmentation_update.__dict__} into collection: spine")
+        database.quality_control.update_one({"_id": req['series_uuid']}, {"$set": qc_update.__dict__}, upsert=True)
+        logger.info(f"Inserted {qc_update.__dict__} into collection: quality_control")
         
         return res
 

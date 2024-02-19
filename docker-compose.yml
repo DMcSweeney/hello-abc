@@ -56,8 +56,8 @@ services:
       - MONGO_INITDB_DATABASE=${MONGO_INITDB_DATABASE}
     volumes:
       - ./data/db:/data/db
-    expose:
-    - '27017'
+    ports:
+    - '5002:27017'
 
   mongo-express:
     image: 'mongo-express:1.0.2'
@@ -73,4 +73,4 @@ services:
     depends_on:
       - mongo
     ports:
-      - "8888:8081"
+      - "5003:8081"

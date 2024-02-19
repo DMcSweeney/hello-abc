@@ -28,7 +28,7 @@ app.config.from_object(BaseConfig)
 app.config['INPUT_DIR'] = INPUT_DIR
 app.config['OUTPUT_DIR'] = OUTPUT_DIR
 
-logging.info(f"Starting connection to: {app.config['MONGO_URI']}")
+logger.info(f"Starting connection to: {app.config['MONGO_URI']}")
 #Connect to MongoDB server
 mongo = PyMongo(app)
 

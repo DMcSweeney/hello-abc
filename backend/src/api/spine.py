@@ -12,6 +12,8 @@ import logging
 
 from abcTK.spine.server import spineApp
 from abcTK.writer import sanityWriter
+import abcTK.database.collections as cl
+
 from app import mongo
 #import models
 
@@ -51,39 +53,29 @@ def infer_spine():
         res, output_filename = handle_response(req['input_path'], response, output_dir, req['loader_function'][0])
 
         #######  UPDATE DATABASE #######
+        # Updates
+        image_update = cl.Images(_id=req['series_uuid'], labelling_done=True, **{k: str(v) for k, v in req.items() if k != 'loader_function'})
+        spine_update = cl.Spine(_id=req['series_uuid'], output_dir=output_dir, prediction=res.json['prediction'],
+                                project = req['project'], input_path=req['input_path'], patient_id=req['patient_id'],
+                                series_uuid=req['series_uuid'], all_parameters={k: str(v) for k, v in req.items() if k != 'loader_function'}, 
+                                )
+        qc_update = cl.QualityControl(_id=req['series_uuid'], project = req['project'], input_path=req['input_path'],
+                                    patient_id=req['patient_id'], series_uuid=req['series_uuid'],
+                                    paths_to_sanity_images={'SPINE': res.json['quality_control_image']},
+                                    quality_control={'SPINE': 2}
+                                    )
+         
         database = mongo.db # Access the database
-        # Insert image info into the images collection (patID, seriesUID, project, path and what has "happened" to the data)
-        payload = {
-            "_id": req['series_uuid'], **{k: str(v) for k, v in req.items() if k != 'loader_function'},
-            #"patientID": req['patient_id'], "project": req['project'], "path": req['input_path'], "series_uuid": req['series_uuid'],
-            # Add image information
-            "spine_labelling_done": True
-        }
-        #payload_id = database.data.insert_one(payload).inserted_id
-        database.images.replace_one({"_id": req['series_uuid'] }, payload, upsert=True)
-        logger.info(f"Inserted {payload} into collection: images")
-        # Then update the results collections
 
-        payload = {
-            "_id": req['series_uuid'] ,"patientID": req['patient_id'], "project": req['project'], "path": req['input_path'], "series_uuid": req['series_uuid'],
-            "message": res.json['message'],
-            "prediction": res.json['prediction'], "all_parameters": {k: str(v) for k, v in req.items()}
-        }
-        database.spine.replace_one({"_id": req['series_uuid']}, payload, upsert=True)
-        logger.info(f"Inserted {payload} into collection: spine")
+        database.images.update_one({"_id": image_update._id}, {'$set': image_update.__dict__}, upsert=True)
+        logger.info(f"Inserted {image_update.__dict__} into collection: images")
+
+        database.spine.update_one({"_id": spine_update._id}, {'$set': spine_update.__dict__}, upsert=True)
+        logger.info(f"Inserted {spine_update.__dict__} into collection: spine")
         
-        ## QA database
-        payload = {"_id": req['series_uuid'] ,"patientID": req['patient_id'], "project": req['project'],
-            "path": req['input_path'], "series_uuid": req['series_uuid'],
-            "path_to_spine_image": res.json['quality_control_image'],
-            f"quality_control": {
-                'SPINE': 2 # 0, failed; 1, passed; 2, unseen
-                }
-            }
-        #TODO if an entry exists but for different level, need to update NOT replace
 
-        database.quality_control.replace_one({"_id": req['series_uuid']}, payload, upsert=True)
-        logger.info(f"Inserted {payload} into collection: quality_control")
+        database.quality_control.update_one({"_id": qc_update._id}, {'$set': qc_update.__dict__}, upsert=True)
+        logger.info(f"Inserted {qc_update.__dict__} into collection: quality_control")
 
         return res
 
@@ -125,7 +117,11 @@ def handle_request(req):
 
         if key == 'pixel_spacing' and "\\" in val:
             val = val.split('\\')
-            print(val, flush=True)
+            val = [float(x) for x in val]
+            req['X_spacing'] = val[0]
+            req['Y_spacing'] = val[1]
+            continue
+
         req[key] = val
 
     return req
