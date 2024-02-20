@@ -6,3 +6,4 @@ data/outputs/*
 data/db/*
 logs/*
 *.db
+.Rproj.user

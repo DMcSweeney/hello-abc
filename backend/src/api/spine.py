@@ -51,31 +51,32 @@ def infer_spine():
         logger.info(f"Spine labelling complete: {response}")
         
         res, output_filename = handle_response(req['input_path'], response, output_dir, req['loader_function'][0])
-
+        print('STATUS', res.status_code)
         #######  UPDATE DATABASE #######
         # Updates
-        image_update = cl.Images(_id=req['series_uuid'], labelling_done=True, **{k: str(v) for k, v in req.items() if k != 'loader_function'})
-        spine_update = cl.Spine(_id=req['series_uuid'], output_dir=output_dir, prediction=res.json['prediction'],
-                                project = req['project'], input_path=req['input_path'], patient_id=req['patient_id'],
-                                series_uuid=req['series_uuid'], all_parameters={k: str(v) for k, v in req.items() if k != 'loader_function'}, 
-                                )
-        qc_update = cl.QualityControl(_id=req['series_uuid'], project = req['project'], input_path=req['input_path'],
-                                    patient_id=req['patient_id'], series_uuid=req['series_uuid'],
-                                    paths_to_sanity_images={'SPINE': res.json['quality_control_image']},
-                                    quality_control={'SPINE': 2}
+        if res.status_code == 200:
+            image_update = cl.Images(_id=req['series_uuid'], labelling_done=True, **{k: str(v) for k, v in req.items() if k != 'loader_function'})
+            spine_update = cl.Spine(_id=req['series_uuid'], output_dir=output_dir, prediction=res.json['prediction'],
+                                    project = req['project'], input_path=req['input_path'], patient_id=req['patient_id'],
+                                    series_uuid=req['series_uuid'], all_parameters={k: str(v) for k, v in req.items() if k != 'loader_function'}, 
                                     )
-         
-        database = mongo.db # Access the database
+            qc_update = cl.QualityControl(_id=req['series_uuid'], project = req['project'], input_path=req['input_path'],
+                                        patient_id=req['patient_id'], series_uuid=req['series_uuid'],
+                                        paths_to_sanity_images={'SPINE': res.json['quality_control_image']},
+                                        quality_control={'SPINE': 2}
+                                        )
+            
+            database = mongo.db # Access the database
 
-        database.images.update_one({"_id": image_update._id}, {'$set': image_update.__dict__}, upsert=True)
-        logger.info(f"Inserted {image_update.__dict__} into collection: images")
+            database.images.update_one({"_id": image_update._id}, {'$set': image_update.__dict__}, upsert=True)
+            logger.info(f"Inserted {image_update.__dict__} into collection: images")
 
-        database.spine.update_one({"_id": spine_update._id}, {'$set': spine_update.__dict__}, upsert=True)
-        logger.info(f"Inserted {spine_update.__dict__} into collection: spine")
-        
+            database.spine.update_one({"_id": spine_update._id}, {'$set': spine_update.__dict__}, upsert=True)
+            logger.info(f"Inserted {spine_update.__dict__} into collection: spine")
+            
 
-        database.quality_control.update_one({"_id": qc_update._id}, {'$set': qc_update.__dict__}, upsert=True)
-        logger.info(f"Inserted {qc_update.__dict__} into collection: quality_control")
+            database.quality_control.update_one({"_id": qc_update._id}, {'$set': qc_update.__dict__}, upsert=True)
+            logger.info(f"Inserted {qc_update.__dict__} into collection: quality_control")
 
         return res
 

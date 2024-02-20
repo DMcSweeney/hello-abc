@@ -68,7 +68,7 @@ def get_stats():
         if req['format'] == 'metric':
             logger.info("Converting areas to mm2")
 
-            spacing = database.images.find_one({"_id": _id, "project": project}, {'pixel_spacing': 1})
+            spacing = database.images.find_one({"_id": _id, "project": project}, {'X_spacing': 1, 'Y_spacing': 1, 'slice_thickness': 1})
             print('SPACING', spacing, flush=True)
             
         areas = [x['area (voxels)'] for x in dict_.values()]
