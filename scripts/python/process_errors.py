@@ -38,7 +38,7 @@ def main():
     print(df)
 
     for _id, exp_id, uri, path, status_code in df.rows(named=False):
-        if status_code == 700:
+        if status_code in [700, 800]:
             # Skip if no centroids error
             continue 
 

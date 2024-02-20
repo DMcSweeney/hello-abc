@@ -149,9 +149,16 @@ def get_loader_function(path):
     
     def load_dcm(path):
         #* Read DICOM directory
+
         reader = sitk.ImageSeriesReader()
-        dcm_names = reader.GetGDCMSeriesFileNames(path)
-        reader.SetFileNames(dcm_names)
+        dcm_names = [reader.GetGDCMSeriesFileNames(path, series_id) for series_id in reader.GetGDCMSeriesIDs(path)]
+        ## If more than 1
+        if len(dcm_names) > 1:
+            ## Select the one with most files and read that
+            logger.warn("Multiple series detected, selecting the one with most files.")
+            dcm_names.sort(key=len, reverse=True)
+
+        reader.SetFileNames(dcm_names[0])
         return reader.Execute()
 
     if os.path.isdir(path):
