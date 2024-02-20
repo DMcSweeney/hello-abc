@@ -64,10 +64,19 @@ def main():
                 print(sql)
                 cursor.execute(sql, payload)
                 conn.commit()
-
                 continue
+
+            if response.status_code == 200:
+                print('Fixed it!')
+                payload = {'_id': _id, 'experiment_id': exp_id, 'uri': uri, 'path': path}
+                sql = f"""UPDATE spinedb SET status_code = 200 WHERE id = {_id}"""
+                print(sql)
+                cursor.execute(sql, payload)
+                conn.commit()
+                continue
+
         
-        break
+        #break
 
 
 
