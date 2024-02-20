@@ -50,12 +50,10 @@ def infer_spine():
         try:
             response = app.infer(request = {"model": "vertebra_pipeline", "image": req['input_path']})#
         except Exception as e:
-            res = make_response(jsonify({
-                'message': e
-            }), 500)
-            
-            return res
-        
+            print(e, flush=True)
+            return e
+
+
         logger.info(f"Spine labelling complete: {response}")
         
         res, output_filename = handle_response(req['input_path'], response, output_dir, req['loader_function'][0])
