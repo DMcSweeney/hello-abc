@@ -56,7 +56,7 @@ def infer_spine():
             }), 800)
 
             print("--------------- HERE I AM --------------- ", res, flush=True)
-            return e
+            return res
 
 
         logger.info(f"Spine labelling complete: {response}")
