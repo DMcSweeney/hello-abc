@@ -47,12 +47,17 @@ def main():
             headers = {"Content-Type": "application/json", 'Accept':'application/json'}
             print(f'Submitting data -- {data} -- with headers {headers}')
             response = requests.post(f"{toolkit_url}/api/infer/spine", json=data, headers=headers)
+            if isinstance(response, RuntimeError):
+                payload = {'_id': _id, 'experiment_id': exp_id, 'uri': uri, 'path': path}
+                sql = f"""UPDATE spinedb SET status_code = 800 WHERE id = {_id}"""
+                print(sql)
+                cursor.execute(sql, payload)
+                conn.commit()
+
             print(response.json()['message'])
             if response.json()['message'] == 'No centroids detected':
-                ## Update status code to 7
+                ## Update status code to 700
                 payload = {'_id': _id, 'experiment_id': exp_id, 'uri': uri, 'path': path}
-                
-                print(payload)
                 sql = f"""UPDATE spinedb SET status_code = 700 WHERE id = {_id}"""
                 print(sql)
                 cursor.execute(sql, payload)
