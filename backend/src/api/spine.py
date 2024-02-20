@@ -49,8 +49,11 @@ def infer_spine():
         # +++++ INFERENCE +++++
         try:
             response = app.infer(request = {"model": "vertebra_pipeline", "image": req['input_path']})#
-        except Exception as e:
+        except RuntimeError as e:
             print(e, flush=True)
+            res = make_response(jsonify({
+                "message": e.__class__.__name__
+            }), 800)
             return e
 
 
