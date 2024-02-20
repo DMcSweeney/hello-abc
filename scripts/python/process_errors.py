@@ -48,9 +48,9 @@ def main():
             print(f'Submitting data -- {data} -- with headers {headers}')
             response = requests.post(f"{toolkit_url}/api/infer/spine", json=data, headers=headers)
 
+            print(type(response).__name__, flush=True)
 
-
-            if isinstance(response, RuntimeError):
+            if type(response).__name__ == RuntimeError:
                 payload = {'_id': _id, 'experiment_id': exp_id, 'uri': uri, 'path': path}
                 sql = f"""UPDATE spinedb SET status_code = 800 WHERE id = {_id}"""
                 print(sql)
