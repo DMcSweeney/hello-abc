@@ -54,6 +54,8 @@ def infer_spine():
             res = make_response(jsonify({
                 "message": e.__class__.__name__
             }), 800)
+
+            print("--------------- HERE I AM --------------- ", res, flush=True)
             return e
 
 
