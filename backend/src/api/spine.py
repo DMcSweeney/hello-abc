@@ -153,6 +153,7 @@ def get_loader_function(path):
         reader = sitk.ImageSeriesReader()
         dcm_names = [reader.GetGDCMSeriesFileNames(path, series_id) for series_id in reader.GetGDCMSeriesIDs(path)]
         ## If more than 1
+        logger.info(f"Detected {len(dcm_names)} series in directory.")
         if len(dcm_names) > 1:
             ## Select the one with most files and read that
             logger.warn("Multiple series detected, selecting the one with most files.")
