@@ -32,7 +32,8 @@ logger.info(f"Starting connection to: {app.config['MONGO_URI']}")
 #Connect to MongoDB server
 mongo = PyMongo(app)
 
-from api import spine, segment, sanity, post_process #import here to bypass circular imports
+#import here to bypass circular imports
+from api import spine, segment, sanity, post_process, conquest 
 
 # Add blueprints
 app.register_blueprint(main.bp)
@@ -40,6 +41,7 @@ app.register_blueprint(spine.bp)
 app.register_blueprint(segment.bp)
 app.register_blueprint(sanity.bp)
 app.register_blueprint(post_process.bp)
+app.register_blueprint(conquest.bp)
 
 app.add_url_rule('/', endpoint='main')
 

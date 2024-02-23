@@ -6,4 +6,7 @@ data/outputs/*
 data/db/*
 logs/*
 *.db
+*.csv
 .Rproj.user
+
+docker-compose.yml

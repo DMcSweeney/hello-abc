@@ -174,7 +174,7 @@ def get_loader_function(path):
     elif os.path.isfile(path):
         # If file, check extension.
         ext = os.path.splitext(path)
-        logger.info(f"Input file extension: {ext}")
+        logger.info(f"Input is file assuming file extension: {ext}")
         if ext in ['.nii', '.nii.gz']:
             return load_nifty, 'nifty'
         elif ext in ['.npy', '.npz']:

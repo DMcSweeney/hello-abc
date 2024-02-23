@@ -21,8 +21,7 @@ services:
     ports:
      - '5001:5001'
     volumes: 
-     - /mnt/d/xnat/1.8/archive:/data/inputs
-     - ./data/outputs:/data/outputs
+     - ./data:/data
      - ./backend/src:/src
      - ./logs:/var/log
      - ./backend/models:/src/models
@@ -41,13 +40,14 @@ services:
     depends_on:
       - mongo
 
-  # dicom: 
-  #   build: ./dicom/
-  #   ports:
-  #     - '11112:11112'
-  #   volumes: 
-  #    - ./data:/data
-  #    - ./dicom/src:/src
+  conquest: 
+    build: ./conquest/
+    tty: true
+    stdin_open: true
+    ports:
+      - '5004:80'
+    volumes: 
+     - conquest-store:/src/Conquest-DICOM-Server/data
 
   mongo:
     image: 'mongo:6.0-jammy'
@@ -75,3 +75,6 @@ services:
       - mongo
     ports:
       - "5003:8081"
+      
+volumes:
+  conquest-store:

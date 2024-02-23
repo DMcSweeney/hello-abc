@@ -19,6 +19,11 @@ def fetchFirstImage():#
     response = database.quality_control.find_one({
         f"quality_control.{vertebra}": 2, 'project': project
     })
+    if response is None:
+        ## None to label just show failures
+        response = database.quality_control.find_one({
+        f"quality_control.{vertebra}": 0, 'project': project
+        })
 
     im_info = database.images.find_one({"_id": response["_id"]})
 
@@ -76,8 +81,18 @@ def fetchImageList():
     project = request.args.get("project")
     # Figure out what image to retrieve
     vertebra = 'L3'
-    database = mongo.db 
-    cursor = database.quality_control.find({'project': project}, {'_id': 1, f'quality_control.{vertebra}': 1}).sort(f"quality_control.{vertebra}", -1)
+    database = mongo.db
+
+    response = database.quality_control.find_one({
+        f"quality_control.{vertebra}": 2, 'project': project
+    })
+    cursor = database.quality_control.find({'project': project}, {'_id': 1, f'quality_control.{vertebra}': 1}
+                                               )
+    if response is None:
+        ## If none to label, show errors first
+        cursor = cursor.sort(f"quality_control.{vertebra}")
+    else:
+        cursor = cursor.sort(f"quality_control.{vertebra}", -1)
     #TODO There must be a better way to do this?
     ids = []
     for doc in cursor:
@@ -145,6 +160,38 @@ def fail_qa():
 
     res = make_response(jsonify({
         "message": "QA fail recorded"
+    }), 200)
+
+    return res
+
+
+@bp.route('/api/sanity/get_summary', methods=['GET'])
+def get_summary():
+    #* Get recep of pass/fail/todo for current project
+    project = request.args.get("project")
+    vertebra = 'L3'
+
+    database = mongo.db
+
+    # Total documents 
+    total = database.quality_control.count_documents({'project': project})
+    # Pass labelling + segmentation
+    num_pass = database.quality_control.count_documents({'project': project,
+                                                          '$and': [ {"quality_control.SPINE": 1}, {f"quality_control.{vertebra}": 1}]})
+    # Fail either labelling or segmentation
+    num_fail = database.quality_control.count_documents({'project': project,
+                                                          '$or': [ {"quality_control.SPINE": 0}, {f"quality_control.{vertebra}": 0}]})
+    # Unreviewed
+    num_todo =database.quality_control.count_documents({'project': project,
+                                                          '$or': [ {"quality_control.SPINE": 2}, {f"quality_control.{vertebra}": 2}]})
+
+    logger.info(f"Found {num_pass} successes and {num_fail} failures with {num_todo} still to review.")
+    res =make_response(jsonify({
+        "message": "Succesfully retrieved summary for current project",
+        "pass": num_pass,
+        "fail": num_fail,
+        "todo": num_todo,
+        "total": total
     }), 200)
 
     return res
