@@ -5,7 +5,7 @@ import logging
 from flask import Flask
 from flask_cors import CORS
 from flask_pymongo import PyMongo
-
+from redis import Redis
 
 import main
 from config import BaseConfig
@@ -23,14 +23,19 @@ datefmt="%Y-%m-%d %H:%M:%S",
 force=True,
 )
 
+# Init flask app
 app = Flask(__name__, instance_relative_config=True)
 app.config.from_object(BaseConfig)
 app.config['INPUT_DIR'] = INPUT_DIR
 app.config['OUTPUT_DIR'] = OUTPUT_DIR
 
+#Connect to MongoDB
 logger.info(f"Starting connection to: {app.config['MONGO_URI']}")
-#Connect to MongoDB server
 mongo = PyMongo(app)
+
+# Connect to Redis
+logger.info("Cpnnecting to Redis")
+redis = Redis(host='redis', port=6379)
 
 #import here to bypass circular imports
 from api import spine, segment, sanity, post_process, conquest 

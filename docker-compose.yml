@@ -2,19 +2,19 @@ version: '3'
 
 services:
   # Web server
-  web: 
-    build: ./web/
-    volumes: 
-     - ./data:/data
-     - ./web/src/:/src
-     - ./logs:/var/log
-    ports:
-      - '5000:5000'
-    environment:
-      - FLASK_DEBUG=${FLASK_DEBUG}
-    depends_on:
-      - backend
-      - mongo
+  # web: 
+  #   build: ./web/
+  #   volumes: 
+  #    - ./data:/data
+  #    - ./web/src/:/src
+  #    - ./logs:/var/log
+  #   ports:
+  #     - '5000:5000'
+  #   environment:
+  #     - FLASK_DEBUG=${FLASK_DEBUG}
+  #   depends_on:
+  #     - backend
+  #     - mongo
 
   backend: 
     build: ./backend/
@@ -75,6 +75,12 @@ services:
       - mongo
     ports:
       - "5003:8081"
-      
+  
+  redis:
+    image: redis:7.2.4
+
+
+
+## Should everything be a volume?    
 volumes:
   conquest-store:
