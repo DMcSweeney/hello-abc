@@ -34,7 +34,7 @@ logger.info(f"Starting connection to: {app.config['MONGO_URI']}")
 mongo = PyMongo(app)
 
 # Connect to Redis
-logger.info("Cpnnecting to Redis")
+logger.info("Connecting to Redis")
 redis = Redis(host='redis', port=6379)
 
 #import here to bypass circular imports

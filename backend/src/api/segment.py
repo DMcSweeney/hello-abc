@@ -12,16 +12,18 @@ import base64
 
 from flask import Blueprint, request, make_response, abort, jsonify, current_app
 from celery import Celery
+from rq import Queue
 
 from abcTK.segment.engine import segmentationEngine
 import abcTK.database.collections as cl
 
-
-from app import mongo
+from app import mongo, redis
 
 
 bp = Blueprint('api/segment', __name__)
 logger = logging.getLogger(__name__)
+q = Queue(connection = redis)
+
 
 #########################################################
 #* ==================== API =============================
@@ -127,7 +129,8 @@ def infer_segment():
         logger.info(f"Processing request: {req}")
         engine = segmentationEngine(**req)
         start = time.time()
-        data, paths_to_sanity = engine.forward(**req)
+        q.enqueue(engine.forward, **req)
+        #data, paths_to_sanity = engine.forward(**req)
         end = time.time()
         
         ## Response should include parameters used: modality, model name, stats too?

@@ -21,7 +21,8 @@ services:
     ports:
      - '5001:5001'
     volumes: 
-     - ./data:/data
+     - ${INPUT_DIR}:/data/inputs
+     - ${OUTPUT_DIR}:/data/outputs
      - ./backend/src:/src
      - ./logs:/var/log
      - ./backend/models:/src/models
@@ -59,6 +60,8 @@ services:
       - ./data/db:/data/db
     ports:
     - '5002:27017'
+    logging:
+      driver: "none"
 
   mongo-express:
     image: 'mongo-express:1.0.2'
@@ -78,6 +81,8 @@ services:
   
   redis:
     image: redis:7.2.4
+    ports:
+      - "5004:6379"
 
 
 
