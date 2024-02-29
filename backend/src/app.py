@@ -6,6 +6,7 @@ from flask import Flask
 from flask_cors import CORS
 from flask_pymongo import PyMongo
 from redis import Redis
+import rq_dashboard
 
 import main
 from config import BaseConfig
@@ -37,16 +38,21 @@ mongo = PyMongo(app)
 logger.info("Connecting to Redis")
 redis = Redis(host='redis', port=6379)
 
+## Connect to RQ dashboard
+app.config["RQ_DASHBOARD_REDIS_URL"] = "redis://redis:6379"
+rq_dashboard.web.setup_rq_connection(app)
+app.register_blueprint(rq_dashboard.blueprint, url_prefix="/rq-dashboard")
+
 #import here to bypass circular imports
-from api import spine, segment, sanity, post_process, conquest 
+from api import sanity, post_process, conquest, jobs
 
 # Add blueprints
 app.register_blueprint(main.bp)
-app.register_blueprint(spine.bp)
-app.register_blueprint(segment.bp)
 app.register_blueprint(sanity.bp)
 app.register_blueprint(post_process.bp)
 app.register_blueprint(conquest.bp)
+app.register_blueprint(jobs.bp)
+
 
 app.add_url_rule('/', endpoint='main')
 
