@@ -86,6 +86,7 @@ packaging==23.1
 pandas==2.0.2
 passlib==1.7.4
 Pillow==9.5.0
+polars==0.19.3
 protobuf==4.23.3
 psutil==5.9.5
 psycopg2-binary==2.9.9

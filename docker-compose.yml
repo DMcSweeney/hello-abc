@@ -93,7 +93,7 @@ services:
       - "6379:6379"
   
   ## Worker processes
-  workers:
+  gpu-workers:
     build: ./workers/
     command: rq worker -u redis://redis:6379 high default low
     volumes:
@@ -107,13 +107,31 @@ services:
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
       - MONGO_INITDB_DATABASE=${MONGO_INITDB_DATABASE}
     deploy:
-      replicas: ${NUM_WORKERS}
+      replicas: ${NUM_GPU_WORKERS}
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    depends_on:
+      - redis
+
+  cpu-workers:
+    build: ./workers/
+    command: rq worker -u redis://redis:6379 default low
+    volumes:
+      - ${INPUT_DIR}:/data/inputs
+      - ${OUTPUT_DIR}:/data/outputs
+      - ./backend/src:/src
+      - ./backend/models:/src/models
+    environment:
+      - FLASK_DEBUG=${FLASK_DEBUG}
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      - MONGO_INITDB_DATABASE=${MONGO_INITDB_DATABASE}
+    deploy:
+      replicas: ${NUM_CPU_WORKERS}
     depends_on:
       - redis
 

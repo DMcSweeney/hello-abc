@@ -21,8 +21,9 @@ def queue_infer_spine():
     req['APP_OUTPUT_DIR'] = current_app.config['OUTPUT_DIR']
     from app import redis
     from abcTK.inference.spine import infer_spine
-
-    q = Queue(connection=redis, serializer=dill)
+    
+    # Sent to high queue for processing by GPU worker
+    q = Queue('high', connection=redis, serializer=dill)
     job = q.enqueue(infer_spine, req)
 
     res = make_response(jsonify({
@@ -41,7 +42,7 @@ def queue_infer_segment():
     from app import redis
     from abcTK.inference.segment import infer_segment
 
-    q = Queue(connection=redis, serializer=dill)
+    q = Queue(connection=redis, serializer=dill) # Sent to default queue
     job = q.enqueue(infer_segment, req)
 
     res = make_response(jsonify({
@@ -60,7 +61,7 @@ def query_job():
 
     job = Job.fetch(id=job_id, connection=redis)
     result = job.latest_result()
-    print(result, result.type, flush=True)
+    
     res = make_response(jsonify({
         'job-ID': job_id,
         'status': str(result.type),

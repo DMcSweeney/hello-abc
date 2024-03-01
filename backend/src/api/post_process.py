@@ -3,11 +3,12 @@ Script containing post-processing endpoints
 """
 import os
 import logging
-from flask import Blueprint, make_response, jsonify, request
+from flask import Blueprint, make_response, jsonify, request, current_app
 from app import mongo
 import SimpleITK as sitk
 import numpy as np
 import json
+import polars as pl
 
 from rt_utils import RTStructBuilder
 
@@ -47,7 +48,7 @@ def getRTStruct():
 
     return res
     
-@bp.route('/api/post_process/get_stats', methods=["POST"])
+@bp.route('/api/post_process/get_stats_for_series', methods=["POST"])
 def get_stats():
     req = request.get_json()
     _id = req['_id']
@@ -75,10 +76,41 @@ def get_stats():
         densities = [x['density (HU)'] for x in dict_.values()]
         data[type_] = {'mean-area': np.mean(areas), 'stdev-area': np.std(areas),
                         'mean-density': np.mean(densities), 'stdev-density': np.std(densities),
-                         **dict_}
+                        **dict_}
 
     res = make_response(jsonify({
         "message": "Stats returned successfully",
         "data": data
+    }), 200)
+    return res
+
+@bp.route('/api/post_process/get_stats_for_project', methods=["POST"])
+def get_stats_for_project():
+    req = request.get_json()
+    project = req['project']
+
+    database = mongo.db
+    response = database.segmentation.find({"project": project})
+
+    df = pl.DataFrame()
+    for doc in response:
+        spacing = database.images.find_one({"project": project, "_id": doc["_id"]}, {'X_spacing': 1, 'Y_spacing': 1, 'slice_thickness': 1})
+        
+        for type_, dict_ in doc["statistics"].items():     
+            for slice_, value in dict_.items():
+                slice_num = int(slice_.lstrip('Slice'))
+
+                row = {"patient_id": doc["patient_id"], "series_uuid": doc["series_uuid"],
+                       "compartment": type_, "area": value['area (voxels)'], "density": value['density (HU)'],
+                       "slice_number": slice_num, "X_spacing": spacing['X_spacing'], "Y_spacing": spacing['Y_spacing'], "slice_thickness": spacing['slice_thickness']}
+                tmp = pl.DataFrame(row)
+                df = pl.concat([df, tmp])
+        
+    output_filename = os.path.join(current_app.config['OUTPUT_DIR'], project, 'statistics.csv') 
+    df.write_csv(output_filename)
+
+    res = make_response(jsonify({
+        "message": "Stats returned successfully",
+        "output_file": output_filename
     }), 200)
     return res
