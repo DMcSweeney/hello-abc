@@ -88,6 +88,7 @@ def get_stats():
 def get_stats_for_project():
     req = request.get_json()
     project = req['project']
+    vertebra = 'L3'
 
     database = mongo.db
     response = database.segmentation.find({"project": project})
@@ -95,14 +96,15 @@ def get_stats_for_project():
     df = pl.DataFrame()
     for doc in response:
         spacing = database.images.find_one({"project": project, "_id": doc["_id"]}, {'X_spacing': 1, 'Y_spacing': 1, 'slice_thickness': 1})
-        
+        qc = database.quality_control.find_one({"project": project, "_id": doc["_id"]}, {'quality_control': 1})
         for type_, dict_ in doc["statistics"].items():     
             for slice_, value in dict_.items():
                 slice_num = int(slice_.lstrip('Slice'))
 
                 row = {"patient_id": doc["patient_id"], "series_uuid": doc["series_uuid"],
                        "compartment": type_, "area": value['area (voxels)'], "density": value['density (HU)'],
-                       "slice_number": slice_num, "X_spacing": spacing['X_spacing'], "Y_spacing": spacing['Y_spacing'], "slice_thickness": spacing['slice_thickness']}
+                       "slice_number": slice_num, "X_spacing": float(spacing['X_spacing']), "Y_spacing": float(spacing['Y_spacing']), "slice_thickness": float(spacing['slice_thickness']),
+                        "spine_qc": qc["quality_control"]["SPINE"], "segmentation_qc": qc["quality_control"][vertebra]}
                 tmp = pl.DataFrame(row)
                 df = pl.concat([df, tmp])
         

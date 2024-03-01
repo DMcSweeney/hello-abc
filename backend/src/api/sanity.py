@@ -55,7 +55,7 @@ def fetchImageByID():
     database = mongo.db 
     response = database.quality_control.find_one({f"_id": _id,'project': project})
     im_info = database.images.find_one({"_id": response["_id"]})
-
+    print(response, im_info, flush=True)
     #TODO Faster if image stored in db? Instead of loading and converting
     path_to_sanity_ = response['paths_to_sanity_images']['ALL'] 
     with open(path_to_sanity_, 'rb') as f:
@@ -83,11 +83,12 @@ def fetchImageList():
     vertebra = 'L3'
     database = mongo.db
 
-    response = database.quality_control.find_one({
-        f"quality_control.{vertebra}": 2, 'project': project
-    })
-    cursor = database.quality_control.find({'project': project}, {'_id': 1, f'quality_control.{vertebra}': 1}
-                                               )
+    response = database.quality_control.find_one({f"quality_control.{vertebra}": 2, 'project': project})
+    cursor = database.quality_control.find(
+        {'project': project, f"quality_control.{vertebra}": {"$exists": True}},
+        {'_id': 1, f'quality_control.{vertebra}': 1}
+        )
+    
     if response is None:
         ## If none to label, show errors first
         cursor = cursor.sort(f"quality_control.{vertebra}")
@@ -174,15 +175,15 @@ def get_summary():
     database = mongo.db
 
     # Total documents 
-    total = database.quality_control.count_documents({'project': project})
+    total = database.quality_control.count_documents({'project': project, f"quality_control.{vertebra}": {"$exists": True} })
     # Pass labelling + segmentation
-    num_pass = database.quality_control.count_documents({'project': project,
+    num_pass = database.quality_control.count_documents({'project': project, f"quality_control.{vertebra}": {"$exists": True},
                                                           '$and': [ {"quality_control.SPINE": 1}, {f"quality_control.{vertebra}": 1}]})
     # Fail either labelling or segmentation
-    num_fail = database.quality_control.count_documents({'project': project,
+    num_fail = database.quality_control.count_documents({'project': project, f"quality_control.{vertebra}": {"$exists": True},
                                                           '$or': [ {"quality_control.SPINE": 0}, {f"quality_control.{vertebra}": 0}]})
     # Unreviewed
-    num_todo =database.quality_control.count_documents({'project': project,
+    num_todo =database.quality_control.count_documents({'project': project, f"quality_control.{vertebra}": {"$exists": True},
                                                           '$or': [ {"quality_control.SPINE": 2}, {f"quality_control.{vertebra}": 2}]})
 
     logger.info(f"Found {num_pass} successes and {num_fail} failures with {num_todo} still to review.")
