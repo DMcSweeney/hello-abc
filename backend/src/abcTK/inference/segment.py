@@ -56,6 +56,8 @@ def infer_segment(req):
     
     return 
 
+
+
 ########################################################
 #* =============== HELPER FUNCTIONS =====================
 
@@ -66,12 +68,15 @@ def update_database(req, data, paths_to_sanity):
     query = database.quality_control.find_one({'_id': req['series_uuid'], 'project': req['project']},
                                                 {"_id": 1, "quality_control": 1, "paths_to_sanity_images": 1})
     
-    ## Update with existing values
-    for k, v in query['paths_to_sanity_images'].items():
-        paths_to_sanity[k] = v
     qc = {req['vertebra']: 2}
-    for k, v in query['quality_control'].items():
-        qc[k] = v
+
+    if query is not None: #If an entry exists
+    ## Update with existing values
+        for k, v in query['paths_to_sanity_images'].items():
+            paths_to_sanity[k] = v
+        
+        for k, v in query['quality_control'].items():
+            qc[k] = v
 
 
     ## Insert into database

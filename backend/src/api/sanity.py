@@ -6,6 +6,9 @@ import logging
 from flask import Blueprint, request, make_response, jsonify, abort
 from app import mongo
 
+import abcTK.database.collections as cl
+
+
 bp = Blueprint('api/sanity', __name__)
 logger = logging.getLogger(__name__)
 
@@ -193,6 +196,30 @@ def get_summary():
         "fail": num_fail,
         "todo": num_todo,
         "total": total
+    }), 200)
+
+    return res
+
+
+@bp.route('/api/sanity/fail_qa_report', methods=['POST'])
+def fail_qa_report():
+    ## Get query string args
+    project = request.args.get("project")
+    _id = request.args.get("_id")
+    vertebra = 'L3'
+
+    ## Get request body
+    req = request.get_json()    
+    payload = {k: v for k, v in req.items() if v != ''} ## If not empty
+    print("Received payload: ", payload, flush=True)
+    # Update db
+    database = mongo.db
+
+    database.quality_control.update_one({"_id": _id}, {"$set": {"qc_report": payload}}, upsert=True)
+    logger.info(f"Updated quality control collection with: {payload}")
+
+    res = make_response(jsonify({
+        'message': 'Succesfully submitted report'
     }), 200)
 
     return res

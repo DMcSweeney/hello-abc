@@ -42,7 +42,7 @@ def queue_infer_segment():
     from app import redis
     from abcTK.inference.segment import infer_segment
 
-    q = Queue(connection=redis, serializer=dill) # Sent to default queue
+    q = Queue('default', connection=redis, serializer=dill) # Sent to default queue
     job = q.enqueue(infer_segment, req)
 
     res = make_response(jsonify({
