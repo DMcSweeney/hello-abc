@@ -101,7 +101,7 @@ def get_stats_for_project():
             for slice_, value in dict_.items():
                 slice_num = int(slice_.lstrip('Slice'))
 
-                row = {"patient_id": doc["patient_id"], "series_uuid": doc["series_uuid"], "acquisition_date": doc["acquisition_date"],
+                row = {"patient_id": doc["patient_id"], "series_uuid": doc["series_uuid"], #"acquisition_date": doc["acquisition_date"],
                        "compartment": type_, "area": value['area (voxels)'], "density": value['density (HU)'],
                        "slice_number": slice_num, "X_spacing": float(spacing['X_spacing']), "Y_spacing": float(spacing['Y_spacing']), "slice_thickness": float(spacing['slice_thickness']),
                         "spine_qc": qc["quality_control"]["SPINE"], "segmentation_qc": qc["quality_control"][vertebra]}
