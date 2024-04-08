@@ -5,7 +5,7 @@ import os
 import numpy as np
 import torch
 from datetime import datetime
-from flask import Blueprint, request, make_response, abort, jsonify, current_app
+from flask import Blueprint
 import SimpleITK as sitk
 import json
 import logging
@@ -14,7 +14,7 @@ from abcTK.spine.server import spineApp
 from abcTK.writer import sanityWriter
 import abcTK.database.collections as cl
 
-from app import mongo
+
 #import models
 
 
@@ -25,98 +25,73 @@ logger = logging.getLogger(__name__)
 #* ==================== API =============================
 #########################################################
 
-@bp.route('/api/infer/spine', methods=["GET", "POST"])
-def infer_spine():
-    if request.method == 'POST':
-        req = request.get_json()
-        logger.info(f"Request received: {req}")
+#@bp.route('/api/infer/spine', methods=["GET", "POST"])
+def infer_spine(req):
+    from app import mongo
+    logger.info(f"Request received: {req}")
 
-        if not torch.cuda.is_available():
-            logger.error("No GPU detected")
-            abort(500) ## Internal server error 
+    if not torch.cuda.is_available():
+        logger.error("No GPU detected")
+        raise ValueError("No GPU detected") ## Internal server error 
 
-        check_params(req, required_params=["input_path", "project"])
-        req['loader_function'] = get_loader_function(req['input_path'])
+    check_params(req, required_params=["input_path", "project"])
+    req['loader_function'] = get_loader_function(req['input_path'])
 
-        req = handle_request(req)
+    req = handle_request(req)
+    logger.info(f"Processing: {req}")
+    ## Start the spineApp
+    app = init_app()
+    
+    output_dir = os.path.join(req['APP_OUTPUT_DIR'], req["project"], req['patient_id'], req["series_uuid"])
+    
+    os.makedirs(output_dir, exist_ok=True)
 
-        ## Start the spineApp
-        app = init_app()
-        
-        output_dir = os.path.join(current_app.config['OUTPUT_DIR'], req["project"], req['patient_id'], req["series_uuid"])
-        os.makedirs(output_dir, exist_ok=True)
+    # +++++ INFERENCE +++++
 
-        # +++++ INFERENCE +++++
-        logger.info(f"REQUEST: {req}")
-        try:
-            response = app.infer(request = {"model": "vertebra_pipeline", "image": req['input_path']})#
-        except RuntimeError as e: 
-            ## Seems to happen if it can't read the scan e.g. scout slices in DICOM folder
-            res = make_response(jsonify({
-                "message": e.__class__.__name__
-            }), 800)
-            return res
+    response = app.infer(request = {"model": "vertebra_pipeline", "image": req['input_path']})#
 
-
-        logger.info(f"Spine labelling complete: {response}")
-        
-        res, output_filename = handle_response(req['input_path'], response, output_dir, req['loader_function'][0])
-        print('STATUS', res.status_code)
-        #######  UPDATE DATABASE #######
-        # Updates
-        if res.status_code == 200:
-            image_update = cl.Images(_id=req['series_uuid'], labelling_done=True, **{k: str(v) for k, v in req.items() if k != 'loader_function'})
-            spine_update = cl.Spine(_id=req['series_uuid'], output_dir=output_dir, prediction=res.json['prediction'],
-                                    project = req['project'], input_path=req['input_path'], patient_id=req['patient_id'],
-                                    series_uuid=req['series_uuid'], all_parameters={k: str(v) for k, v in req.items() if k != 'loader_function'}, 
+    logger.info(f"Spine labelling complete: {response}")
+    
+    res, output_filename = handle_response(req['input_path'], response, output_dir, req['loader_function'][0])
+    
+    #######  UPDATE DATABASE #######
+    # Updates
+    if res['status_code'] == 200:
+        image_update = cl.Images(_id=req['series_uuid'], labelling_done=True, **{k: str(v) for k, v in req.items() if k not in ['loader_function', 'APP_OUTPUT_DIR']})
+        spine_update = cl.Spine(_id=req['series_uuid'], output_dir=output_dir, prediction=res['prediction'],
+                                project = req['project'], input_path=req['input_path'], patient_id=req['patient_id'],
+                                series_uuid=req['series_uuid'], all_parameters={k: str(v) for k, v in req.items() if k not in ['loader_function', 'APP_OUTPUT_DIR']}, 
+                                )
+        qc_update = cl.QualityControl(_id=req['series_uuid'], project = req['project'], input_path=req['input_path'],
+                                    patient_id=req['patient_id'], series_uuid=req['series_uuid'],
+                                    paths_to_sanity_images={'SPINE': res['quality_control_image']},
+                                    quality_control={'SPINE': 2}
                                     )
-            qc_update = cl.QualityControl(_id=req['series_uuid'], project = req['project'], input_path=req['input_path'],
-                                        patient_id=req['patient_id'], series_uuid=req['series_uuid'],
-                                        paths_to_sanity_images={'SPINE': res.json['quality_control_image']},
-                                        quality_control={'SPINE': 2}
-                                        )
-            
-            database = mongo.db # Access the database
+        
+        database = mongo.db # Access the database
 
-            database.images.update_one({"_id": image_update._id}, {'$set': image_update.__dict__}, upsert=True)
-            logger.info(f"Inserted {image_update.__dict__} into collection: images")
+        database.images.update_one({"_id": image_update._id}, {'$set': image_update.__dict__}, upsert=True)
+        logger.info(f"Inserted {image_update.__dict__} into collection: images")
 
-            database.spine.update_one({"_id": spine_update._id}, {'$set': spine_update.__dict__}, upsert=True)
-            logger.info(f"Inserted {spine_update.__dict__} into collection: spine")
-            
+        database.spine.update_one({"_id": spine_update._id}, {'$set': spine_update.__dict__}, upsert=True)
+        logger.info(f"Inserted {spine_update.__dict__} into collection: spine")
+        
 
-            database.quality_control.update_one({"_id": qc_update._id}, {'$set': qc_update.__dict__}, upsert=True)
-            logger.info(f"Inserted {qc_update.__dict__} into collection: quality_control")
+        database.quality_control.update_one({"_id": qc_update._id}, {'$set': qc_update.__dict__}, upsert=True)
+        logger.info(f"Inserted {qc_update.__dict__} into collection: quality_control")
 
-        return res
+    return res
 
-    elif request.method == "GET":
-        # Return some help
-        return "<h1> Here's some help </h1>"
 
 ########################################################
 #* =============== HELPER FUNCTIONS =====================
 ########################################################
 def handle_request(req):
     ## Handle paramaters and extract info from dicom header if not provided.
-    if os.path.isdir(req['input_path']):
-        req = handle_dicom(req)
-    else:
-        ## If file
-        if req['input_path'].endswith('.nii'):
-            handle_nifty(req)
-    return req
-
-def handle_nifty(req):
-    # Load nifty
-    Image = sitk.ReadImage(req['input_path'])
-    req['X_spacing'], req['Y_spacing'], req['slice_thickness'] = Image.GetSpacing()
-    return req
-
-def handle_dicom(req):
     dcm_files = [x for x in os.listdir(req['input_path']) if x.endswith('.dcm')]
     if len(dcm_files) == 0:
-        abort(400, {"message": f"No dicom files found in input path: {req['input_path']}"})
+        raise ValueError(f"No dicom files found in input path: {req['input_path']}")
+    
     header_keys = {
         'patient_id': '0010|0020',
         'study_uuid': '0020|000D',
@@ -126,15 +101,16 @@ def handle_dicom(req):
         'acquisition_date': '0008|0022'
     }
     items = read_dicom_header(os.path.join(req["input_path"], dcm_files[0]), header_keys=header_keys)
-        ## Add to request
+
+    ## Add to request
     for key, val in items.items():
         if key in req:
             logger.info(f"{key} provided in request, ignoring DICOM header.")
             continue
         if key == 'patient_id' and val == '':
-            abort(400, {"message": "Patient ID not found in DICOM header. Please provide with request."})
+            raise ValueError("Patient ID not found in DICOM header. Please provide with request.")
         if key == 'series_uuid' and val == None:
-            abort(400, {"message": "Series UUID not found in DICOM header. Please provide with request."})
+            raise ValueError("Series UUID not found in DICOM header. Please provide with request.")
         
         if key == 'acquisition_date' and val is not None:
             val = datetime.strptime(val, '%Y%m%d').date().strftime('%d-%m-%Y')
@@ -147,6 +123,7 @@ def handle_dicom(req):
             continue
 
         req[key] = val
+
     return req
 
 def get_loader_function(path):
@@ -180,11 +157,11 @@ def get_loader_function(path):
         if len(dcm) != 0:
             return load_dcm, 'dicom' ## Loader function
         else:
-            abort(400, {'message': 'Input is not a directory of dicom files. Please use full path if using other format.'})
+            raise ValueError('Input is not a directory of dicom files. Please use full path if using other format.')
 
     elif os.path.isfile(path):
         # If file, check extension.
-        ext = os.path.splitext(path)[-1]
+        ext = os.path.splitext(path)
         logger.info(f"Input is file assuming file extension: {ext}")
         if ext in ['.nii', '.nii.gz']:
             return load_nifty, 'nifty'
@@ -215,7 +192,7 @@ def check_params(req, required_params = ["input", "project", "patient_id", "scan
     test = [x in req for x in required_params]
     if not all(test):
         logger.info(f"Some required parameters are missing. Did you provide the following? {required_params}")
-        abort(400) ## Bad request
+        raise ValueError(f"Some required parameters are missing. Did you provide the following? {required_params}") ## Bad request
 
 
 def init_app():
@@ -253,9 +230,10 @@ def handle_response(image_path, res, output_dir, loader_function):
     if label is None and label_json is None:
         #* This is the case if no centroids were detected
         logger.error("No centroids detected")
-        res = make_response(jsonify({
-            "message": "No centroids detected"
-        }), 500)
+        # res = make_response(jsonify({
+        #     "message": "No centroids detected"
+        # }), 500)
+        res['status_code'] = 500
         output_filename = None
     
     elif label is None and label_json is not None:
@@ -265,20 +243,24 @@ def handle_response(image_path, res, output_dir, loader_function):
         json_to_file(pretty_json, json_output_path)
         output_filename = writer.write_spine_sanity('SPINE', image_path, pretty_json, loader_function)
 
-        res = make_response(jsonify({
-            "message": f"Labelling finished succesfully. Output written to: {json_output_path}",
-            "quality_control_image": output_filename,
-            "prediction": pretty_json
-        }), 200)
+        res['status_code'] = 200
+        res['prediction'] = pretty_json
+        res['quality_control_image'] = output_filename
+        # res = make_response(jsonify({
+        #     "message": f"Labelling finished succesfully. Output written to: {json_output_path}",
+        #     "quality_control_image": output_filename,
+        #     "prediction": pretty_json
+        # }), 200)
     
     else:
         # This should never happen... Would like to add this though
         logger.error("Somehow you got here.\
                       This means the spine module tried to write vertebral masks, which hasn't been implemented.\
                       I have no idea how you managed that... Well done!!")
-        res = make_response(jsonify({
-            "message": "Amazing error, you broke everything"
-        }), 500)
+        # res = make_response(jsonify({
+        #     "message": "Amazing error, you broke everything"
+        # }), 500)
+        res['status_code'] = 500
         output_filename = None
 
     return res, output_filename

@@ -15,7 +15,8 @@ services:
   #   depends_on:
   #     - backend
   #     - mongo
-
+  
+  ## THE MAIN SERVICE 
   backend: 
     build: ./backend/
     ports:
@@ -26,7 +27,11 @@ services:
      - ./backend/src:/src
      - ./logs:/var/log
      - ./backend/models:/src/models
+    command: flask run
     environment:
+      - FLASK_APP=app.py
+      - FLASK_RUN_HOST=0.0.0.0
+      - FLASK_RUN_PORT=5001
       - FLASK_DEBUG=${FLASK_DEBUG}
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
@@ -40,7 +45,7 @@ services:
               capabilities: [gpu]
     depends_on:
       - mongo
-
+  ## CONQUEST SERVICE - handles dicom comms.
   conquest: 
     build: ./conquest/
     tty: true
@@ -49,7 +54,7 @@ services:
       - '5004:80'
     volumes: 
      - conquest-store:/src/Conquest-DICOM-Server/data
-
+  ## NoSQL database
   mongo:
     image: 'mongo:6.0-jammy'
     environment:
@@ -63,6 +68,7 @@ services:
     logging:
       driver: "none"
 
+  ## Web server for the db, useful for debugging
   mongo-express:
     image: 'mongo-express:1.0.2'
     environment:
@@ -78,13 +84,56 @@ services:
       - mongo
     ports:
       - "5003:8081"
-  
+    logging:
+      driver: "none"
+  ## Job queue
   redis:
     image: redis:7.2.4
     ports:
-      - "5004:6379"
+      - "6379:6379"
+  
+  ## Worker processes
+  gpu-workers:
+    build: ./workers/
+    command: rq worker -u redis://redis:6379 high default low
+    volumes:
+      - ${INPUT_DIR}:/data/inputs
+      - ${OUTPUT_DIR}:/data/outputs
+      - ./backend/src:/src
+      - ./backend/models:/src/models
+    environment:
+      - FLASK_DEBUG=${FLASK_DEBUG}
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      - MONGO_INITDB_DATABASE=${MONGO_INITDB_DATABASE}
+    deploy:
+      replicas: ${NUM_GPU_WORKERS}
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      - redis
 
-
+  cpu-workers:
+    build: ./workers/
+    command: rq worker -u redis://redis:6379 default low
+    volumes:
+      - ${INPUT_DIR}:/data/inputs
+      - ${OUTPUT_DIR}:/data/outputs
+      - ./backend/src:/src
+      - ./backend/models:/src/models
+    environment:
+      - FLASK_DEBUG=${FLASK_DEBUG}
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      - MONGO_INITDB_DATABASE=${MONGO_INITDB_DATABASE}
+    deploy:
+      replicas: ${NUM_CPU_WORKERS}
+    depends_on:
+      - redis
 
 ## Should everything be a volume?    
 volumes:

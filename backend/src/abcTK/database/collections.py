@@ -35,6 +35,7 @@ class QualityControl():
 
     paths_to_sanity_images: dict
     quality_control: dict
+    qc_report: dict 
 
 @dataclass
 class Spine():

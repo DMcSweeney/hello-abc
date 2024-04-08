@@ -11,6 +11,7 @@ import numpy as np
 from scipy import signal
 
 import torch
+import onnx
 import onnxruntime as ort
 import albumentations as A
 
@@ -21,9 +22,9 @@ import skimage
 from flask import abort
 
 from abcTK.writer import sanityWriter
+from abcTK.wrapper import ONNXInferenceWrapper
 
 logger = logging.getLogger(__name__)
-
 
 class segmentationEngine():
     def __init__(self, output_dir, modality, vertebra, worldmatch_correction, fat_threshold=(-190, -30), muscle_threshold=(-29, 150), **kwargs):
@@ -42,10 +43,11 @@ class segmentationEngine():
         }
 
         self._init_model_bank() #* Load bank of models
-        self._set_options() #* Set ONNX session options
+        #self._set_options() #* Set ONNX session options
 
-        self.ort_session = ort.InferenceSession(self.model_paths[modality], sess_options=self.sess_options)
-        
+        #self.ort_session = ort.InferenceSession(self.model_paths[modality], sess_options=self.sess_options)
+        onnx_model = onnx.load(self.model_paths[modality])
+        self.ort_session = ONNXInferenceWrapper(self.model_paths[modality], onnx_model)
         
         #* ImageNet pre-processing transforms
         self.transforms = A.Compose([

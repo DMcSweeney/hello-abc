@@ -37,6 +37,7 @@ class sanityWriter():
         ax.imshow(mip, cmap='gray')
         ## Scale point and flip if needed
         for vert, coords in json.items():
+            
             loc = coords[-1]*ratio[0] ## ratio already switched to npy array indexing
             if orient.GetFlipAxes()[-1]:
                 loc = mip.shape[0] - loc - 1 #-1 Since size starts at 1 but indexing at 0

@@ -8,8 +8,8 @@ import polars as pl
 import json
 import sqlite3
 
-toolkit_url = 'http://10.127.3.38:5001' ## Toolkit url
-xnat_url = 'http://10.127.3.38:8080'
+#toolkit_url = 'http://10.127.3.80:5001' ## Toolkit url
+xnat_url = 'http://10.127.3.80:8080'
 
 ## Path inside container
 project_id = 'BaselineCT' #Source project
@@ -46,13 +46,10 @@ def filter_on_most_files():
     with requests.Session() as sess:
         sess.auth = ('donal', 'mu99le6')
         expts = get_experiments(sess, project_id)
+    experiments = [x for x in expts['ResultSet']['Result'] if x['ID'] not in paths_to_skip]
+    print(f'Sharing {len(experiments)} experiments')
     data = {}
-    for exp in expts['ResultSet']['Result']:
-        if exp['ID'] in paths_to_skip:
-            print(f"Skipping {exp['ID']}")
-            continue
-
-
+    for exp in experiments:
         with requests.Session() as sess:
             sess.auth = ('donal', 'mu99le6')
             scans = sess.get(f"{xnat_url}/data/experiments/{exp['ID']}/scans").json()

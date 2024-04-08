@@ -8,5 +8,6 @@ logs/*
 *.db
 *.csv
 .Rproj.user
+.env
 
 docker-compose.yml

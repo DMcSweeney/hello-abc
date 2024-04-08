@@ -35,29 +35,29 @@ RUN sed -i 's/post_max_size = 8M/post_max_size = 250M/g' /etc/php/*/apache2/php.
 RUN systemctl restart apache2
 
 # Make a workdir, to keep organised
-WORKDIR /src
-
 #get conquest source code
 RUN git clone https://github.com/marcelvanherk/Conquest-DICOM-Server
 #COPY Conquest-DICOM-Server Conquest-DICOM-Server
+WORKDIR /Conquest-DICOM-Server
 
 #mark scripts as executable
-RUN cd Conquest-DICOM-Server && chmod 777 maklinux
-RUN cd Conquest-DICOM-Server && chmod 777 linux/regen
-RUN cd Conquest-DICOM-Server && chmod 777 linux/updatelinux
-RUN cd Conquest-DICOM-Server && chmod 777 linux/restart
+RUN chmod 777 maklinux linux/regen linux/updatelinux linux/restart
 
 #compile, update dicom.ini if next to Dockerfile, and regenerate the SQLite database
-RUN cd Conquest-DICOM-Server && linux/updatelinux
-#COPY *dicom.ini Conquest-DICOM-Server
-RUN cd Conquest-DICOM-Server && linux/regen
+RUN linux/updatelinux
+RUN linux/regen
+
+## Update dicom.ini and add trigger.lua
+COPY dicom.ini .
+COPY trigger.lua ./lua/trigger.lua
 
 #finalise the web server
 RUN chown -R www-data /var/www/html
 RUN chmod 777 /var/www/html/api/dicom/servertask
 
 #make the startup script executable
-RUN cp Conquest-DICOM-Server/linux/restart /usr/bin/conquest
+RUN cp ./linux/restart /usr/bin/conquest
+
 ## Add CMD to launch on startup
 CMD ["conquest"]
 
