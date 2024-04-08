@@ -69,7 +69,7 @@ def update_database(req, data, paths_to_sanity):
                                                 {"_id": 1, "quality_control": 1, "paths_to_sanity_images": 1})
     
     qc = {req['vertebra']: 2}
-
+    qc_report = {}
     if query is not None: #If an entry exists
     ## Update with existing values
         for k, v in query['paths_to_sanity_images'].items():
@@ -77,14 +77,16 @@ def update_database(req, data, paths_to_sanity):
         
         for k, v in query['quality_control'].items():
             qc[k] = v
-
+        
+        if 'qc_report' in query:
+            qc_report = query['qc_report']
 
     ## Insert into database
     segmentation_update = cl.Segmentation(_id=req['series_uuid'], project=req['project'], input_path=req['input_path'], 
                                             patient_id=req['patient_id'], series_uuid=req['series_uuid'], output_dir=req['output_dir'], statistics=data,
                                             all_parameters={k: str(v) for k, v in req.items()})
     qc_update = cl.QualityControl(_id=req['series_uuid'], project=req['project'], input_path=req['input_path'], patient_id=req['patient_id'],
-                                    series_uuid=req['series_uuid'], paths_to_sanity_images=paths_to_sanity, quality_control=qc
+                                    series_uuid=req['series_uuid'], paths_to_sanity_images=paths_to_sanity, quality_control=qc, qc_report=qc_report
                                     )
 
     database.images.update_one({"_id": req['series_uuid']}, {"$set": {"segmentation_done": True}}, upsert=True)

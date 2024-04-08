@@ -37,13 +37,17 @@ def queue_infer_spine():
 @bp.route('/api/jobs/infer/segment', methods=["POST"])
 def queue_infer_segment():
     req = request.get_json()
+    if 'depends_on' not in req:
+        req['depends_on'] = None
+    print(f"----- Job depends on job-id: {req['depends_on']} -----", flush=True)
+
 
     req['APP_OUTPUT_DIR'] = current_app.config['OUTPUT_DIR']
     from app import redis
     from abcTK.inference.segment import infer_segment
 
     q = Queue('default', connection=redis, serializer=dill) # Sent to default queue
-    job = q.enqueue(infer_segment, req)
+    job = q.enqueue(infer_segment, req, depends_on=req['depends_on'])
 
     res = make_response(jsonify({
             "message": "Segmentation inference submitted",

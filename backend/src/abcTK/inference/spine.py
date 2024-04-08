@@ -65,7 +65,7 @@ def infer_spine(req):
         qc_update = cl.QualityControl(_id=req['series_uuid'], project = req['project'], input_path=req['input_path'],
                                     patient_id=req['patient_id'], series_uuid=req['series_uuid'],
                                     paths_to_sanity_images={'SPINE': res['quality_control_image']},
-                                    quality_control={'SPINE': 2}
+                                    quality_control={'SPINE': 2}, qc_report={}
                                     )
         
         database = mongo.db # Access the database
