@@ -105,7 +105,7 @@ class VertebraFinder(BasicInferTask):
             Activationsd(keys="pred", softmax=True),
             AsDiscreted(keys="pred", argmax=True),
             KeepLargestConnectedComponentd(keys="pred"),
-            Restored(keys="pred", ref_image="image_cached"),
+            Restored(keys="pred", ref_image="image_cached", invert_orient=True),
             VertebraLocalizationSegmentation(keys="pred", result="result"),
         ]
 

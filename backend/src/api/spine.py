@@ -47,15 +47,14 @@ def infer_spine():
         os.makedirs(output_dir, exist_ok=True)
 
         # +++++ INFERENCE +++++
+        logger.info(f"REQUEST: {req}")
         try:
             response = app.infer(request = {"model": "vertebra_pipeline", "image": req['input_path']})#
-        except RuntimeError as e:
-            print(e, flush=True)
+        except RuntimeError as e: 
+            ## Seems to happen if it can't read the scan e.g. scout slices in DICOM folder
             res = make_response(jsonify({
                 "message": e.__class__.__name__
             }), 800)
-
-            print("--------------- HERE I AM --------------- ", res, flush=True)
             return res
 
 
@@ -100,10 +99,24 @@ def infer_spine():
 ########################################################
 def handle_request(req):
     ## Handle paramaters and extract info from dicom header if not provided.
+    if os.path.isdir(req['input_path']):
+        req = handle_dicom(req)
+    else:
+        ## If file
+        if req['input_path'].endswith('.nii'):
+            handle_nifty(req)
+    return req
+
+def handle_nifty(req):
+    # Load nifty
+    Image = sitk.ReadImage(req['input_path'])
+    req['X_spacing'], req['Y_spacing'], req['slice_thickness'] = Image.GetSpacing()
+    return req
+
+def handle_dicom(req):
     dcm_files = [x for x in os.listdir(req['input_path']) if x.endswith('.dcm')]
     if len(dcm_files) == 0:
         abort(400, {"message": f"No dicom files found in input path: {req['input_path']}"})
-    
     header_keys = {
         'patient_id': '0010|0020',
         'study_uuid': '0020|000D',
@@ -113,8 +126,7 @@ def handle_request(req):
         'acquisition_date': '0008|0022'
     }
     items = read_dicom_header(os.path.join(req["input_path"], dcm_files[0]), header_keys=header_keys)
-
-    ## Add to request
+        ## Add to request
     for key, val in items.items():
         if key in req:
             logger.info(f"{key} provided in request, ignoring DICOM header.")
@@ -135,7 +147,6 @@ def handle_request(req):
             continue
 
         req[key] = val
-
     return req
 
 def get_loader_function(path):
@@ -173,7 +184,7 @@ def get_loader_function(path):
 
     elif os.path.isfile(path):
         # If file, check extension.
-        ext = os.path.splitext(path)
+        ext = os.path.splitext(path)[-1]
         logger.info(f"Input is file assuming file extension: {ext}")
         if ext in ['.nii', '.nii.gz']:
             return load_nifty, 'nifty'
