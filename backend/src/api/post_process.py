@@ -97,6 +97,10 @@ def get_stats_for_project():
     for doc in response:
         spacing = database.images.find_one({"project": project, "_id": doc["_id"]}, {'X_spacing': 1, 'Y_spacing': 1, 'slice_thickness': 1})
         qc = database.quality_control.find_one({"project": project, "_id": doc["_id"]}, {'quality_control': 1})
+        if not qc:
+            logger.warn(f"{doc['_id']} did not pass quality control, skipping")
+            continue
+
         for type_, dict_ in doc["statistics"].items():     
             for slice_, value in dict_.items():
                 slice_num = int(slice_.lstrip('Slice'))
@@ -107,7 +111,13 @@ def get_stats_for_project():
                         "spine_qc": qc["quality_control"]["SPINE"], "segmentation_qc": qc["quality_control"][vertebra]}
                 tmp = pl.DataFrame(row)
                 df = pl.concat([df, tmp])
-        
+
+    if df.is_empty():
+        res = make_response(jsonify({
+            "message": "No examples passed quality control.",
+        }), 400)
+        return res
+
     output_filename = os.path.join(current_app.config['OUTPUT_DIR'], project, 'statistics.csv') 
     df.write_csv(output_filename)
 

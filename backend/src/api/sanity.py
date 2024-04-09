@@ -218,6 +218,16 @@ def fail_qa_report():
     database.quality_control.update_one({"_id": _id}, {"$set": {"qc_report": payload}}, upsert=True)
     logger.info(f"Updated quality control collection with: {payload}")
 
+    ##TODO Update qc control flag
+    if payload["failMode"] == 'badSegmentation':
+        database.quality_control.update_one({f"_id": _id, 'project': project},  {'$set': {f'quality_control.{vertebra}': 0, f'quality_control.SPINE': 1} })
+    elif payload["failMode"] == 'wrongLevel':
+        database.quality_control.update_one({f"_id": _id,'project': project},  {'$set': {f'quality_control.SPINE': 0, f'quality_control.{vertebra}': 1} })
+    else:
+        ## FailMode = Other or scan Issue fail both 
+        ## Fail both
+        database.quality_control.update_one({f"_id": _id,'project': project},  {'$set': {f'quality_control.SPINE': 0, f'quality_control.{vertebra}': 0} })
+
     res = make_response(jsonify({
         'message': 'Succesfully submitted report'
     }), 200)

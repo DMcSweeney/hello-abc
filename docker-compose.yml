@@ -86,6 +86,8 @@ services:
       - "5003:8081"
     logging:
       driver: "none"
+    restart: always
+
   ## Job queue
   redis:
     image: redis:7.2.4

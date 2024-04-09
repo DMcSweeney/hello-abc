@@ -44,7 +44,7 @@ rq_dashboard.web.setup_rq_connection(app)
 app.register_blueprint(rq_dashboard.blueprint, url_prefix="/rq-dashboard")
 
 #import here to bypass circular imports
-from api import sanity, post_process, conquest, jobs
+from api import sanity, post_process, conquest, jobs, database
 
 # Add blueprints
 app.register_blueprint(main.bp)
@@ -52,6 +52,7 @@ app.register_blueprint(sanity.bp)
 app.register_blueprint(post_process.bp)
 app.register_blueprint(conquest.bp)
 app.register_blueprint(jobs.bp)
+app.register_blueprint(database.bp)
 
 
 app.add_url_rule('/', endpoint='main')
