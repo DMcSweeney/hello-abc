@@ -1,6 +1,0 @@
-dill==0.3.8
-Flask==2.3.2
-numpy==1.25.0
-rq==1.16.0
-rq-dashboard==0.6.7.2
-SimpleITK==2.2.1

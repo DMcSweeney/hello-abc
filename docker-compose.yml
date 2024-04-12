@@ -1,21 +1,5 @@
-version: '3'
 
 services:
-  # Web server
-  # web: 
-  #   build: ./web/
-  #   volumes: 
-  #    - ./data:/data
-  #    - ./web/src/:/src
-  #    - ./logs:/var/log
-  #   ports:
-  #     - '5000:5000'
-  #   environment:
-  #     - FLASK_DEBUG=${FLASK_DEBUG}
-  #   depends_on:
-  #     - backend
-  #     - mongo
-  
   ## THE MAIN SERVICE 
   backend: 
     build: ./backend/
@@ -27,7 +11,7 @@ services:
      - ./backend/src:/src
      - ./logs:/var/log
      - ./backend/models:/src/models
-    command: flask run
+    #command: flask run
     environment:
       - FLASK_APP=app.py
       - FLASK_RUN_HOST=0.0.0.0
@@ -65,8 +49,7 @@ services:
       - ./data/db:/data/db
     ports:
     - '5002:27017'
-    logging:
-      driver: "none"
+    command: mongod --quiet --logpath /dev/null 
 
   ## Web server for the db, useful for debugging
   mongo-express:
