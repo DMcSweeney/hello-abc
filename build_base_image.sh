@@ -1,1 +1,0 @@
-docker build -t abc-base ./base/
